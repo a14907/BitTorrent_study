@@ -1,7 +1,9 @@
 ﻿using System.Collections.Generic;
+using System.Diagnostics;
 
 namespace Bencoding.Model
 {
+    [DebuggerDisplay("Count = {Value.Count}")]
     public class ListField : Base
     {
         public ListField(List<Base> val) : base(BType.List)

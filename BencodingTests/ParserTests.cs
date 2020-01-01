@@ -4,6 +4,8 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using System.IO;
+using Bencoding.Model;
+using System.Security.Cryptography;
 
 namespace Bencoding.Tests
 {
@@ -29,7 +31,7 @@ namespace Bencoding.Tests
         {
             var temp = "4:wdqa";
             var ms = new MemoryStream(Encoding.UTF8.GetBytes(temp));
-            var val = Parser.ParseString(ms);
+            var val = Parser.DecodingString(ms);
             Assert.AreEqual("wdqa", val.Value);
             Assert.AreEqual(ms.Position, temp.Length);
         }
@@ -39,17 +41,29 @@ namespace Bencoding.Tests
         {
             var temp = "i12345e";
             var ms = new MemoryStream(Encoding.UTF8.GetBytes(temp));
-            var val = Parser.ParseInt(ms);
+            var val = Parser.DecodingLong(ms);
             Assert.AreEqual(12345, val.Value);
             Assert.AreEqual(ms.Position, temp.Length);
         }
 
         [TestMethod()]
-        public void Test_Parse()
+        public void Test_Parse_mulfile()
         {
             using (var fs = new FileStream("a.torrent", FileMode.Open))
             {
-                var val = Parser.Parse(fs);
+                var val = Parser.Decode(fs) as DictionaryField;
+                Assert.AreEqual(Model.BType.Dictionary, val.Type);
+                Assert.AreEqual(fs.Position, fs.Length);
+            }
+
+        }
+        [TestMethod()]
+        public void Test_Parse_singlefile()
+        {
+            //Encoding.UTF8.GetString(WebUtility.UrlEncodeToBytes(buf, 0, buf.Length));
+            using (var fs = new FileStream("b.torrent", FileMode.Open))
+            {
+                var val = Parser.Decode(fs);
                 Assert.AreEqual(Model.BType.Dictionary, val.Type);
                 Assert.AreEqual(fs.Position, fs.Length);
             }
