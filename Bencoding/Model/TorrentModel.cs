@@ -70,6 +70,13 @@ namespace Bencoding.Model
             _dictionaryField = dictionaryField;
         }
 
+        public byte[] Sha1Hash
+        {
+            get
+            {
+                return _dictionaryField.Sha1Val;
+            }
+        }
         public long Piece_length { get { return (_dictionaryField["piece length"] as NumberField)?.Value ?? 0; } }
         public string Pieces { get { return (_dictionaryField["pieces"] as StringField)?.Value; } }
         public long Private { get { return (_dictionaryField["private"] as NumberField)?.Value ?? 0; } }

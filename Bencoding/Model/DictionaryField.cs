@@ -17,6 +17,10 @@ namespace Bencoding.Model
         {
             get
             {
+                if (!Value.ContainsKey(index))
+                {
+                    return null;
+                }
                 return Value[index];
             }
         }
