@@ -46,6 +46,8 @@ namespace Tracker
                 throw new Exception("不存在http或者https的announce");
             }
 
+            //udp tracker:https://blog.csdn.net/wenxinfly/article/details/1504785
+
             var ls = new List<TrackerResponse>();
             foreach (var b in httpUrls)
             {
