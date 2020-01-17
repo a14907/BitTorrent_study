@@ -13,6 +13,12 @@
     <None Update="a.torrent">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Update="b.torrent">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="c.torrent">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>

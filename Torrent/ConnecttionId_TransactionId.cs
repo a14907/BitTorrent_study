@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Net;
 
 namespace Torrent
 {
@@ -27,9 +28,9 @@ namespace Torrent
         public byte[] ToArray()
         {
             var buf = new List<byte>(16);
-            buf.AddRange(BitConverter.GetBytes(Connecttion_ID));
+            buf.AddRange(BitConverter.GetBytes(IPAddress.HostToNetworkOrder(Connecttion_ID)));
             buf.AddRange(BitConverter.GetBytes(0));
-            buf.AddRange(BitConverter.GetBytes(Transaction_ID));
+            buf.AddRange(BitConverter.GetBytes(IPAddress.HostToNetworkOrder(Transaction_ID)));
 
             return buf.ToArray();
         }
@@ -69,19 +70,22 @@ namespace Torrent
                 return false;
             }
             var other = obj as ConnecttionId_TransactionId;
-            return other.Connecttion_ID == this.Connecttion_ID && other.Transaction_ID == this.Transaction_ID;
+            return other.Transaction_ID == this.Transaction_ID;
         }
 
         public override int GetHashCode()
         {
-            unchecked // Overflow is fine, just wrap
+            unchecked
             {
                 int hash = 17;
-                // Suitable nullity checks etc, of course :)
                 hash = hash * 23 + Transaction_ID.GetHashCode();
-                hash = hash * 23 + Connecttion_ID.GetHashCode();
                 return hash;
             }
+        }
+
+        public override string ToString()
+        {
+            return $"Transaction_ID:{Transaction_ID},Connecttion_ID:{Connecttion_ID}";
         }
     }
 }

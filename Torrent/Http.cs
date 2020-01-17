@@ -16,22 +16,22 @@ namespace Torrent
     public static class Http
     {
         private static readonly HttpClient _httpClient = new HttpClient();
-        private static readonly byte[] _peerIdBytes;
+        public static readonly byte[] PeerIdBytes;
         public static readonly int Port = 8089;
 
         static Http()
         {
-            _peerIdBytes = new byte[20];
+            PeerIdBytes = new byte[20];
             var r = new Random();
             for (int i = 0; i < 20; i++)
             {
-                _peerIdBytes[i] = (byte)r.Next(0, 255);
+                PeerIdBytes[i] = (byte)r.Next(0, 255);
             }
         }
         public static async Task<List<TrackerResponse>> TrackAsync(this TorrentModel model)
         {
             var info_hash = Encoding.UTF8.GetString(WebUtility.UrlEncodeToBytes(model.Info.Sha1Hash, 0, 20));
-            var peer_id = Encoding.UTF8.GetString(WebUtility.UrlEncodeToBytes(_peerIdBytes, 0, 20));
+            var peer_id = Encoding.UTF8.GetString(WebUtility.UrlEncodeToBytes(PeerIdBytes, 0, 20));
             var port = Port;
             var uploaded = 0;
             var downloaded = 0;
@@ -54,10 +54,10 @@ namespace Torrent
             {
                 try
                 {
-                    string url = $"{b}?info_hash={info_hash}&peer_id={peer_id}&port={port}&uploased={uploaded}&downloaded={downloaded}&left={left}&event={eventStr}&compact={compact}";
+                    string url = $"{b.Url}?info_hash={info_hash}&peer_id={peer_id}&port={port}&uploased={uploaded}&downloaded={downloaded}&left={left}&event={eventStr}&compact={compact}";
                     if (b.Url.Contains('?'))
                     {
-                        url = $"{b}&info_hash={info_hash}&peer_id={peer_id}&port={port}&uploased={uploaded}&downloaded={downloaded}&left={left}&event={eventStr}&compact={compact}";
+                        url = $"{b.Url}&info_hash={info_hash}&peer_id={peer_id}&port={port}&uploased={uploaded}&downloaded={downloaded}&left={left}&event={eventStr}&compact={compact}";
                     }
                     var responseBuf = await _httpClient.GetByteArrayAsync(url);
                     var res = Parser.DecodingDictionary(new MemoryStream(responseBuf));
@@ -66,7 +66,7 @@ namespace Torrent
                 }
                 catch (Exception e)
                 {
-                    Console.WriteLine("请求" + b + "发生错误：" + e.Message);
+                    Console.WriteLine("请求" + b.Url + "发生错误：" + e.Message);
                 }
             }
             model.TrackerResponse.AddRange(ls);
