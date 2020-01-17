@@ -3,6 +3,7 @@ using Bencoding.Model;
 using System;
 using System.IO;
 using System.Threading.Tasks;
+using Torrent;
 using Tracker;
 
 namespace ConsoleApp
@@ -16,8 +17,11 @@ namespace ConsoleApp
                 var data = Parser.Decode(fs);
                 TorrentModel torrentModel = new TorrentModel(data as DictionaryField);
 
-                //var res = await torrentModel.TrackAsync();
-                var res = await torrentModel.ScrapeAsync();
+                var res = await torrentModel.TrackAsync();
+                //var res = await torrentModel.ScrapeAsync();
+
+                Console.WriteLine("OK");
+                Console.ReadKey();
             }
 
         }

@@ -1,33 +1,58 @@
-﻿using System;
+﻿using Bencoding.Model;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using Tracker.Models;
 
-namespace Bencoding.Model
+namespace Torrent
 {
-    public class TorrentModel
+    public class AnnounceItem
+    {
+        public AnnounceItem(string url)
+        {
+            Url = url;
+        }
+
+        public string Url { get; set; }
+        public Guid Guid { get; set; } = Guid.NewGuid();
+
+    }
+    public partial class TorrentModel
     {
         private readonly DictionaryField _dictionaryField;
+        private readonly Guid _guid = Guid.NewGuid();
 
         public TorrentModel(DictionaryField dictionaryField)
         {
             _dictionaryField = dictionaryField;
             Info = new Info(dictionaryField["info"] as DictionaryField);
         }
+        public Guid Id { get { return _guid; } }
 
-        public string Announce
+        private AnnounceItem _announce;
+        public AnnounceItem Announce
         {
             get
             {
-                return (_dictionaryField["announce"] as StringField)?.Value;
+                if (_announce == null)
+                {
+                    _announce = new AnnounceItem((_dictionaryField["announce"] as StringField)?.Value);
+                }
+                return _announce;
             }
         }
-        public List<List<string>> Announce_list
+        private List<List<AnnounceItem>> _announce_list;
+        public List<List<AnnounceItem>> Announce_list
         {
             get
             {
-                return (_dictionaryField["announce-list"] as ListField)?.Value
-                    .Select(m => (m as ListField)?.Value.Select(n => (n as StringField)?.Value).ToList()).ToList();
+                if (_announce_list == null)
+                {
+                    _announce_list = (_dictionaryField["announce-list"] as ListField)?.Value
+                    .Select(m => (m as ListField)?.Value.Select(n => new AnnounceItem((n as StringField)?.Value)).ToList()).ToList();
+                }
+                return _announce_list;
             }
         }
         public string Comment
@@ -59,6 +84,7 @@ namespace Bencoding.Model
             }
         }
         public Info Info { get; set; }
+        public List<TrackerResponse> TrackerResponse { get; set; }
     }
 
     public class Info

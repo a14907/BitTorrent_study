@@ -6,7 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Tracker\Tracker.csproj" />
+    <ProjectReference Include="..\Torrent\Torrent.csproj" />
   </ItemGroup>
 
   <ItemGroup>

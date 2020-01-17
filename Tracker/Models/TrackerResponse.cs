@@ -10,11 +10,14 @@ namespace Tracker.Models
     public class TrackerResponse
     {
         private readonly DictionaryField _dictionaryField;
+        private readonly string _url;
 
-        public TrackerResponse(DictionaryField dictionaryField)
+        public TrackerResponse(DictionaryField dictionaryField, string url)
         {
             _dictionaryField = dictionaryField;
+            _url = url;
         }
+        public string Url { get { return _url; } }
         public long Complete { get { return (_dictionaryField["complete"] as NumberField)?.Value ?? 0; } }
         public long Downloaded { get { return (_dictionaryField["downloaded"] as NumberField)?.Value ?? 0; } }
         public long Incomplete { get { return (_dictionaryField["incomplete"] as NumberField)?.Value ?? 0; } }

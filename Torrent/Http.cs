@@ -9,8 +9,9 @@ using System.Linq;
 using System.IO;
 using Tracker.Models;
 using System.Collections.Generic;
+using Tracker;
 
-namespace Tracker
+namespace Torrent
 {
     public static class Http
     {
@@ -40,7 +41,7 @@ namespace Tracker
 
             var us = model.Announce_list.SelectMany(m => m).ToList();
             us.Add(model.Announce);
-            var httpUrls = us.Where(m => m.StartsWith("http")).ToList();
+            var httpUrls = us.Where(m => m.Url.StartsWith("http")).ToList();
             if (!httpUrls.Any())
             {
                 throw new Exception("不存在http或者https的announce");
@@ -54,14 +55,13 @@ namespace Tracker
                 try
                 {
                     string url = $"{b}?info_hash={info_hash}&peer_id={peer_id}&port={port}&uploased={uploaded}&downloaded={downloaded}&left={left}&event={eventStr}&compact={compact}";
-                    if (b.Contains('?'))
+                    if (b.Url.Contains('?'))
                     {
                         url = $"{b}&info_hash={info_hash}&peer_id={peer_id}&port={port}&uploased={uploaded}&downloaded={downloaded}&left={left}&event={eventStr}&compact={compact}";
                     }
                     var responseBuf = await _httpClient.GetByteArrayAsync(url);
                     var res = Parser.DecodingDictionary(new MemoryStream(responseBuf));
-                    var m = new TrackerResponse(res);
-                    var ps = m.Peers;
+                    var m = new TrackerResponse(res, b.Url);
                     ls.Add(m);
                 }
                 catch (Exception e)
@@ -69,7 +69,7 @@ namespace Tracker
                     Console.WriteLine("请求" + b + "发生错误：" + e.Message);
                 }
             }
-
+            model.TrackerResponse = ls;
             return ls;
         }
 
@@ -77,7 +77,7 @@ namespace Tracker
         {
             var us = model.Announce_list.SelectMany(m => m).ToList();
             us.Add(model.Announce);
-            var httpUrls = us.Where(m => m.StartsWith("http")).ToList();
+            var httpUrls = us.Where(m => m.Url.StartsWith("http")).ToList();
             if (!httpUrls.Any())
             {
                 throw new Exception("不存在http或者https的announce");
@@ -89,11 +89,11 @@ namespace Tracker
             {
                 try
                 {
-                    if (!announceUrl.Contains("announce"))
+                    if (!announceUrl.Url.Contains("announce"))
                     {
                         throw new Exception("announceUrl不符合规范，无法进行scrape查询");
                     }
-                    var baseUrl = announceUrl.Replace("announce", "scrape");
+                    var baseUrl = announceUrl.Url.Replace("announce", "scrape");
                     var url = $"{baseUrl}?info_hash=" + info_hash;
                     var buf = await _httpClient.GetByteArrayAsync(url);
                     var dic = Parser.DecodingDictionary(new MemoryStream(buf));
