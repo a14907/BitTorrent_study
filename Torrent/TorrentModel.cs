@@ -15,7 +15,6 @@ namespace Torrent
         }
 
         public string Url { get; set; }
-        public Guid Guid { get; set; } = Guid.NewGuid();
 
     }
     public partial class TorrentModel
@@ -84,7 +83,7 @@ namespace Torrent
             }
         }
         public Info Info { get; set; }
-        public List<TrackerResponse> TrackerResponse { get; set; }
+        public List<TrackerResponse> TrackerResponse { get; } = new List<TrackerResponse>();
     }
 
     public class Info

@@ -17,7 +17,7 @@ namespace Torrent
     {
         private static readonly HttpClient _httpClient = new HttpClient();
         private static readonly byte[] _peerIdBytes;
-        private static readonly int _port = 8089;
+        public static readonly int Port = 8089;
 
         static Http()
         {
@@ -32,7 +32,7 @@ namespace Torrent
         {
             var info_hash = Encoding.UTF8.GetString(WebUtility.UrlEncodeToBytes(model.Info.Sha1Hash, 0, 20));
             var peer_id = Encoding.UTF8.GetString(WebUtility.UrlEncodeToBytes(_peerIdBytes, 0, 20));
-            var port = _port;
+            var port = Port;
             var uploaded = 0;
             var downloaded = 0;
             var left = model.Info.Length;
@@ -69,7 +69,7 @@ namespace Torrent
                     Console.WriteLine("请求" + b + "发生错误：" + e.Message);
                 }
             }
-            model.TrackerResponse = ls;
+            model.TrackerResponse.AddRange(ls);
             return ls;
         }
 

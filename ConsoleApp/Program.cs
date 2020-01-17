@@ -12,18 +12,21 @@ namespace ConsoleApp
     {
         static async Task Main(string[] args)
         {
+            var server = new UdpServer(Http.Port);
+            server.Start();
             using (var fs = new FileStream("a.torrent", FileMode.Open))
             {
                 var data = Parser.Decode(fs);
                 TorrentModel torrentModel = new TorrentModel(data as DictionaryField);
 
-                var res = await torrentModel.TrackAsync();
+                //var res = await torrentModel.TrackAsync();
                 //var res = await torrentModel.ScrapeAsync();
+                server.Track(torrentModel);
 
-                Console.WriteLine("OK");
-                Console.ReadKey();
             }
-
+            server.Stop();
+            Console.WriteLine("OK");
+            Console.ReadKey();
         }
     }
 }
