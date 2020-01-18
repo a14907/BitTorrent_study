@@ -18,34 +18,34 @@ namespace Torrent
         private Timer _timer;
         private bool _isStart = false;
         private Dictionary<ConnecttionId_TransactionId, TorrentModel> _dic = new Dictionary<ConnecttionId_TransactionId, TorrentModel>();
-        private Dictionary<ReplayItem, int> _replayLs = new Dictionary<ReplayItem, int>();
+        private Dictionary<ReplayItem, int> _connectingLs = new Dictionary<ReplayItem, int>();
 
         public UdpServer(int port)
         {
             _port = port;
             _socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
-            _timer = new Timer(RepeatConnectUDP, null, 15000, Timeout.Infinite);
+            _timer = new Timer(RepeatConnectingUDP, null, 15000, Timeout.Infinite);
         }
 
-        private void RepeatConnectUDP(object state)
+        private void RepeatConnectingUDP(object state)
         {
             try
             {
-                foreach (var item in _replayLs)
+                foreach (var item in _connectingLs)
                 {
                     _socket.SendTo(item.Key.Ids.ToArray(), item.Key.EndPoint);
                 }
-                foreach (var item in _replayLs.Keys.ToArray())
+                foreach (var item in _connectingLs.Keys.ToArray())
                 {
-                    _replayLs[item] += 1;
+                    _connectingLs[item] += 1;
                 }
 
-                _replayLs = _replayLs.Where(m => m.Value < 5).ToDictionary(m => m.Key, m => m.Value);
+                _connectingLs = _connectingLs.Where(m => m.Value < 5).ToDictionary(m => m.Key, m => m.Value);
             }
             finally
             {
                 _timer?.Dispose();
-                _timer = new Timer(RepeatConnectUDP, null, 15000, Timeout.Infinite);
+                _timer = new Timer(RepeatConnectingUDP, null, 15000, Timeout.Infinite);
             }
         }
 
@@ -102,12 +102,12 @@ namespace Torrent
                         Scraping(model, connection_id, transaction_id, remoteEP);
                     }
                     var rk = new ReplayItem() { EndPoint = remoteEP, Ids = ids };
-                    if (_replayLs.ContainsKey(rk))
+                    if (_connectingLs.ContainsKey(rk))
                     {
                         //Console.WriteLine("已获取udp返回的值，从循环数据源删除相关数据");
-                        _replayLs.Remove(rk);
+                        _connectingLs.Remove(rk);
                     }
-                    _replayLs.Remove(new ReplayItem { Ids = ids, EndPoint = remoteEP });
+                    _connectingLs.Remove(new ReplayItem { Ids = ids, EndPoint = remoteEP });
                 }
                 else if (action == ActionsType.Announce)
                 {
@@ -245,7 +245,7 @@ namespace Torrent
 
 
                 _dic.Add(ids, model);
-                _replayLs.Add(new ReplayItem { Ids = ids, EndPoint = iPEndPoint }, 0);
+                _connectingLs.Add(new ReplayItem { Ids = ids, EndPoint = iPEndPoint }, 0);
             }
 
         }
