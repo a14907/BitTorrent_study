@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using System.Linq;
 using System.IO;
 using System.Threading;
+using Tracker.Models;
 
 namespace Torrent
 {
@@ -23,10 +24,10 @@ namespace Torrent
         {
             _port = port;
             _socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
-            _timer = new Timer(RepeatCallUDP, null, 15000, Timeout.Infinite);
+            _timer = new Timer(RepeatConnectUDP, null, 15000, Timeout.Infinite);
         }
 
-        private void RepeatCallUDP(object state)
+        private void RepeatConnectUDP(object state)
         {
             try
             {
@@ -44,7 +45,7 @@ namespace Torrent
             finally
             {
                 _timer?.Dispose();
-                _timer = new Timer(RepeatCallUDP, null, 15000, Timeout.Infinite);
+                _timer = new Timer(RepeatConnectUDP, null, 15000, Timeout.Infinite);
             }
         }
 
@@ -81,33 +82,74 @@ namespace Torrent
 
         private void HandleTrack(byte[] buf, int receiveLen, EndPoint remoteEP)
         {
-            using (var ms = new MemoryStream(buf))
+            using (var ms = new MemoryStream(buf, 0, receiveLen))
             using (var br = new BinaryReader(ms))
             {
-                var res = IPAddress.NetworkToHostOrder(br.ReadInt32());
-                if (res == 0)
+                var action = (ActionsType)IPAddress.NetworkToHostOrder(br.ReadInt32());
+                if (action == ActionsType.Connect)
                 {
-                    var i32 = IPAddress.NetworkToHostOrder(br.ReadInt32());
-                    var i64 = IPAddress.NetworkToHostOrder(br.ReadInt64());
-                    Console.WriteLine($"收到字节长度：{receiveLen}，i32:{i32},i64:{i64}");
+                    var transaction_id = IPAddress.NetworkToHostOrder(br.ReadInt32());
+                    var connection_id = IPAddress.NetworkToHostOrder(br.ReadInt64());
+                    //Console.WriteLine($"收到字节长度：{receiveLen}，i32:{transaction_id},i64:{connection_id}");
 
-                    var ids = ConnecttionId_TransactionId.Create(i32, i64);
+                    var ids = ConnecttionId_TransactionId.Create(transaction_id, connection_id);
                     if (_dic.ContainsKey(ids))
                     {
                         var model = _dic[ids];
-                        Console.WriteLine(model.Info.Name ?? model.Info.Files.FirstOrDefault()?.Path.FirstOrDefault());
+                        //Console.WriteLine(model.Info.Name ?? model.Info.Files.FirstOrDefault()?.Path.FirstOrDefault());
 
-                        Announcing(model, i64, i32);
+                        //Announcing(model, connection_id, transaction_id, remoteEP);
+                        Scraping(model, connection_id, transaction_id, remoteEP);
                     }
                     var rk = new ReplayItem() { EndPoint = remoteEP, Ids = ids };
                     if (_replayLs.ContainsKey(rk))
                     {
-                        Console.WriteLine("已获取udp返回的值，从循环数据源删除相关数据");
+                        //Console.WriteLine("已获取udp返回的值，从循环数据源删除相关数据");
                         _replayLs.Remove(rk);
                     }
                     _replayLs.Remove(new ReplayItem { Ids = ids, EndPoint = remoteEP });
                 }
-                else if (res == 3)
+                else if (action == ActionsType.Announce)
+                {
+                    var transaction_id = IPAddress.NetworkToHostOrder(br.ReadInt32());
+                    var interval = IPAddress.NetworkToHostOrder(br.ReadInt32());
+                    var leechers = IPAddress.NetworkToHostOrder(br.ReadInt32());
+                    var seeders = IPAddress.NetworkToHostOrder(br.ReadInt32());
+
+                    var ls = new List<IPEndPoint>();
+                    while (ms.Position != ms.Length)
+                    {
+                        var ip = br.ReadBytes(4);
+                        var port = br.ReadUInt16();
+                        var ipendpoint = new IPEndPoint(new IPAddress(ip), port);
+                        ls.Add(ipendpoint);
+                    }
+                    Console.WriteLine("收到响应 transaction_id:" + transaction_id + ",ip-" + ls.Aggregate("", (s, i) => s + i + ";"));
+                    var ids = ConnecttionId_TransactionId.Create(transaction_id);
+                    if (_dic.ContainsKey(ids))
+                    {
+                        var model = _dic[ids];
+                        model.TrackerResponse.Add(new TrackerResponse(remoteEP as IPEndPoint)
+                        {
+                            Peers = ls.ToArray(),
+                            Interval = interval,
+                            Complete = seeders,
+                            Incomplete = leechers
+                        });
+                    }
+                }
+                else if (action == ActionsType.Scrape)
+                {
+                    var transaction_id = IPAddress.NetworkToHostOrder(br.ReadInt32());
+                    var ids = ConnecttionId_TransactionId.Create(transaction_id);
+
+                    var complete = IPAddress.NetworkToHostOrder(br.ReadInt32());
+                    var downloaded = IPAddress.NetworkToHostOrder(br.ReadInt32());
+                    var incomplete = IPAddress.NetworkToHostOrder(br.ReadInt32());
+
+                    // todo do something for Scrape
+                }
+                else if (action == ActionsType.Error)
                 {
                     br.ReadInt32();
                     var errMsg = br.ReadString();
@@ -120,15 +162,64 @@ namespace Torrent
             }
         }
 
-        public void Announcing(TorrentModel model, long connectionId, int transactionId)
+        private void Scraping(TorrentModel model, long connectionId, int transactionId, EndPoint remoteEP)
         {
-            var connection_id = connectionId;
-            var action = (int)UdpActions.Announce;
-            var transaction_id = transactionId;
+            long connection_id = connectionId;
+            int action = (int)ActionsType.Scrape;
+            int transaction_id = transactionId;
+            var info_hash = model.Info.Sha1Hash;
+
+            using (var ms = new MemoryStream())
+            using (var bw = new BinaryWriter(ms))
+            {
+                bw.Write(IPAddress.HostToNetworkOrder(connection_id));
+                bw.Write(IPAddress.HostToNetworkOrder(action));
+                bw.Write(IPAddress.HostToNetworkOrder(transaction_id));
+                bw.Write(info_hash);
+
+                _socket.SendTo(ms.ToArray(), remoteEP);
+            }
+        }
+
+        public void Announcing(TorrentModel model, long connectionId, int transactionId, EndPoint remoteEP)
+        {
+            long connection_id = connectionId;
+            int action = (int)ActionsType.Announce;
+            int transaction_id = transactionId;
             var info_hash = model.Info.Sha1Hash;
             var peer_id = Http.PeerIdBytes;
-            var downloaded = 0;
-            var left = model.Info.Length;
+            long downloaded = 0;
+            long left = model.Info.Length;
+            long uploaded = 0;
+            int eventVal = (int)EventType.Started;
+            int ip = 0;
+            //	A unique key that is randomized by the client
+            int key = new Random().Next(0, 999999);
+            int num_want = 30;
+            UInt16 port = (UInt16)Http.Port;
+            UInt16 extensions = 0;
+
+            using (var ms = new MemoryStream())
+            using (var bw = new BinaryWriter(ms))
+            {
+                bw.Write(IPAddress.HostToNetworkOrder(connection_id));
+                bw.Write(IPAddress.HostToNetworkOrder(action));
+                bw.Write(IPAddress.HostToNetworkOrder(transaction_id));
+                bw.Write(info_hash);
+                bw.Write(peer_id);
+                bw.Write(IPAddress.HostToNetworkOrder(downloaded));
+                bw.Write(IPAddress.HostToNetworkOrder(left));
+                bw.Write(IPAddress.HostToNetworkOrder(uploaded));
+                bw.Write(IPAddress.HostToNetworkOrder(eventVal));
+                bw.Write(IPAddress.HostToNetworkOrder(ip));
+                bw.Write(IPAddress.HostToNetworkOrder(key));
+                bw.Write(IPAddress.HostToNetworkOrder(num_want));
+                bw.Write(IPAddress.HostToNetworkOrder(port));
+                bw.Write(IPAddress.HostToNetworkOrder(extensions));
+
+                _socket.SendTo(ms.ToArray(), remoteEP);
+            }
+
         }
 
         public void Connecting(TorrentModel model)
@@ -190,13 +281,5 @@ namespace Torrent
                 return null;
             }
         }
-    }
-
-    public enum UdpActions
-    {
-        Connect = 0,
-        Announce = 1,
-        Scrape = 2,
-        Error = 3,// (only in server replies)
     }
 }

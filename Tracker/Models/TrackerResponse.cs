@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
+using System.Net.Sockets;
 using System.Text;
 
 namespace Tracker.Models
@@ -10,19 +11,110 @@ namespace Tracker.Models
     public class TrackerResponse
     {
         private readonly DictionaryField _dictionaryField;
-        private readonly string _url;
+        private readonly IPEndPoint _ipEndPoint;
 
-        public TrackerResponse(DictionaryField dictionaryField, string url)
+        public TrackerResponse(DictionaryField dictionaryField, string httpurl)
         {
             _dictionaryField = dictionaryField;
-            _url = url;
+            _ipEndPoint = GetIpEndpoint(httpurl);
         }
-        public string Url { get { return _url; } }
-        public long Complete { get { return (_dictionaryField["complete"] as NumberField)?.Value ?? 0; } }
-        public long Downloaded { get { return (_dictionaryField["downloaded"] as NumberField)?.Value ?? 0; } }
-        public long Incomplete { get { return (_dictionaryField["incomplete"] as NumberField)?.Value ?? 0; } }
-        public long Interval { get { return (_dictionaryField["interval"] as NumberField)?.Value ?? 0; } }
-        public long MinInterval { get { return (_dictionaryField["min interval"] as NumberField)?.Value ?? 0; } }
+
+        private IPEndPoint GetIpEndpoint(string url)
+        {
+            var u = new Uri(url);
+            return new IPEndPoint(Dns.GetHostAddresses(u.Host).FirstOrDefault(m => m.AddressFamily == AddressFamily.InterNetwork), u.Port);
+        }
+
+        public TrackerResponse(IPEndPoint ipEndPoint)
+        {
+            _ipEndPoint = ipEndPoint;
+        }
+        public IPEndPoint IPEndPoint { get { return _ipEndPoint; } }
+
+        private long _complete;
+        public long Complete
+        {
+            get
+            {
+                if (_dictionaryField == null)
+                {
+                    return _complete;
+                }
+                return (_dictionaryField["complete"] as NumberField)?.Value ?? 0;
+            }
+            set
+            {
+                _complete = value;
+            }
+        }
+
+        private long _downloaded;
+        public long Downloaded
+        {
+            get
+            {
+                if (_dictionaryField == null)
+                {
+                    return _downloaded;
+                }
+                return (_dictionaryField["downloaded"] as NumberField)?.Value ?? 0;
+            }
+            set
+            {
+                _downloaded = value;
+            }
+        }
+
+        private long _incomplete;
+        public long Incomplete
+        {
+            get
+            {
+                if (_dictionaryField == null)
+                {
+                    return _incomplete;
+                }
+                return (_dictionaryField["incomplete"] as NumberField)?.Value ?? 0;
+            }
+            set
+            {
+                _incomplete = value;
+            }
+        }
+
+        private long _interval;
+        public long Interval
+        {
+            get
+            {
+                if (_dictionaryField == null)
+                {
+                    return _interval;
+                }
+                return (_dictionaryField["interval"] as NumberField)?.Value ?? 0;
+            }
+            set
+            {
+                _interval = value;
+            }
+        }
+
+        private long _minInterval;
+        public long MinInterval
+        {
+            get
+            {
+                if (_dictionaryField == null)
+                {
+                    return _minInterval;
+                }
+                return (_dictionaryField["min interval"] as NumberField)?.Value ?? 0;
+            }
+            set
+            {
+                _minInterval = value;
+            }
+        }
 
         private IPEndPoint[] _peers;
         public IPEndPoint[] Peers
@@ -31,6 +123,10 @@ namespace Tracker.Models
             {
                 if (_peers == null)
                 {
+                    if (_dictionaryField == null)
+                    {
+                        return _peers;
+                    }
                     var buf = (_dictionaryField["peers"] as StringField)?.Buffer;
                     int count = buf.Length / 6;
                     var ls = new IPEndPoint[count];
@@ -44,6 +140,10 @@ namespace Tracker.Models
                     _peers = ls.Distinct().ToArray();
                 }
                 return _peers;
+            }
+            set
+            {
+                _peers = value;
             }
         }
     }

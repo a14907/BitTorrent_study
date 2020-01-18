@@ -17,7 +17,7 @@ namespace ConsoleApp
 
             var server = new UdpServer(Http.Port);
             server.Start();
-            using (var fs = new FileStream("c.torrent", FileMode.Open))
+            using (var fs = new FileStream("a.torrent", FileMode.Open))
             {
                 var data = Parser.Decode(fs);
                 TorrentModel torrentModel = new TorrentModel(data as DictionaryField);

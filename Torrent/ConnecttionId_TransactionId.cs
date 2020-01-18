@@ -24,6 +24,10 @@ namespace Torrent
         {
             return new ConnecttionId_TransactionId { Transaction_ID = transaction_ID, Connecttion_ID = connecttion_ID };
         }
+        public static ConnecttionId_TransactionId Create(int transaction_ID)
+        {
+            return new ConnecttionId_TransactionId { Transaction_ID = transaction_ID };
+        }
 
         public byte[] ToArray()
         {
