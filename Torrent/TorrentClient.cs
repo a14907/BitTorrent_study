@@ -29,14 +29,21 @@ namespace Torrent
         {
             using (var fs = new FileStream(fileName, FileMode.Open))
             {
-                var data = Parser.DecodingDictionary(fs);
-                TorrentModel torrentModel = new TorrentModel(data);
-
-                var res = await torrentModel.TrackAsync();
-                _server.Connecting(torrentModel);
+                await AddTorrent(fs);
 
             }
         }
+
+        public async Task AddTorrent(Stream fs)
+        {
+            var data = Parser.DecodingDictionary(fs);
+            TorrentModel torrentModel = new TorrentModel(data);
+
+            var res = await torrentModel.TrackAsync();
+            _server.Connecting(torrentModel);
+        }
+
+
     }
 
     public class DataItem
