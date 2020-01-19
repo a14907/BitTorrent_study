@@ -17,13 +17,13 @@ namespace ConsoleApp
 
             var server = new UdpServer(Http.Port);
             server.Start();
-            using (var fs = new FileStream("a.torrent", FileMode.Open))
+            using (var fs = new FileStream("c.torrent", FileMode.Open))
             {
                 var data = Parser.Decode(fs);
                 TorrentModel torrentModel = new TorrentModel(data as DictionaryField);
 
                 //var res = await torrentModel.TrackAsync();
-                //var res = await torrentModel.ScrapeAsync();
+
                 server.Connecting(torrentModel);
 
             }

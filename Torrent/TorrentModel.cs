@@ -84,6 +84,25 @@ namespace Torrent
         }
         public Info Info { get; set; }
         public List<TrackerResponse> TrackerResponse { get; } = new List<TrackerResponse>();
+
+        public override bool Equals(object obj)
+        {
+            if (obj == null || obj.GetType() != typeof(TorrentModel))
+            {
+                return false;
+            }
+            var m = obj as TorrentModel;
+            if (Info.Sha1Hash == null || m.Info.Sha1Hash == null)
+            {
+                return false;
+            }
+            return this.Info.Sha1Hash.SequenceEqual(m.Info.Sha1Hash);
+        }
+
+        public override int GetHashCode()
+        {
+            return Info.Sha1Hash.Aggregate(13, (s, item) => s + 23 * item);
+        }
     }
 
     public class Info
