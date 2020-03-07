@@ -15,7 +15,7 @@ namespace Torrent
 {
     public static class Http
     {
-        private static readonly HttpClient _httpClient = new HttpClient();
+        private static readonly HttpClient _httpClient = new HttpClient() { Timeout = TimeSpan.FromSeconds(10) };
         public static readonly byte[] PeerIdBytes;
         public static readonly int Port = 8089;
 
@@ -61,7 +61,15 @@ namespace Torrent
                     }
                     var responseBuf = await _httpClient.GetByteArrayAsync(url);
                     var res = Parser.DecodingDictionary(new MemoryStream(responseBuf));
+                    if (res.Value.Count == 1)
+                    {
+                        continue;
+                    }
                     var m = new TrackerResponse(res, b.Url);
+                    if (m.Complete == 0)
+                    {
+                        continue;
+                    }
                     ls.Add(m);
                 }
                 catch (Exception e)
