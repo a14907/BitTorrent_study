@@ -34,6 +34,7 @@ namespace Torrent
                 foreach (var item in _connectingLs)
                 {
                     _socket.SendTo(item.Key.Ids.ToArray(), item.Key.EndPoint);
+                    Console.WriteLine("请求connecting:" + item.Key.Ids.Transaction_ID);
                 }
                 foreach (var item in _connectingLs.Keys.ToArray())
                 {
@@ -98,8 +99,8 @@ namespace Torrent
                         var model = _dic[ids];
                         //Console.WriteLine(model.Info.Name ?? model.Info.Files.FirstOrDefault()?.Path.FirstOrDefault());
 
-                        //Announcing(model, connection_id, transaction_id, remoteEP);
-                        Scraping(model, connection_id, transaction_id, remoteEP);
+                        Announcing(model, connection_id, transaction_id, remoteEP);
+                        //Scraping(model, connection_id, transaction_id, remoteEP);
                     }
                     var rk = new ReplayItem() { EndPoint = remoteEP, Ids = ids };
                     if (_connectingLs.ContainsKey(rk))
@@ -136,6 +137,7 @@ namespace Torrent
                             Complete = seeders,
                             Incomplete = leechers
                         });
+                        _dic.Remove(ids);
                     }
                 }
                 else if (action == ActionsType.Scrape)
@@ -277,7 +279,7 @@ namespace Torrent
             }
             catch (Exception ex)
             {
-                Console.WriteLine(ex.Message);
+                Console.WriteLine(ex.Message + ":" + u);
                 return null;
             }
         }
