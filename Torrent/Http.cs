@@ -15,7 +15,7 @@ namespace Torrent
 {
     public static class Http
     {
-        private static readonly HttpClient _httpClient = new HttpClient() { Timeout = TimeSpan.FromSeconds(10) };
+        private static readonly HttpClient _httpClient = new HttpClient() { Timeout = TimeSpan.FromSeconds(1) };
         public static readonly byte[] PeerIdBytes;
         public static readonly int Port = 8089;
 
@@ -72,6 +72,7 @@ namespace Torrent
                     }
                     Console.WriteLine("请求" + b.Url + "成功：");
                     ls.Add(m);
+                    break;
                 }
                 catch (Exception e)
                 {

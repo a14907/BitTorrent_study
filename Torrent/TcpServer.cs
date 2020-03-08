@@ -13,6 +13,8 @@ namespace Torrent
 {
     public class Tcp
     {
+        public static int TotalPeer;
+        public static int ErrNum;
         public Tcp()
         {
         }
@@ -20,7 +22,22 @@ namespace Torrent
         public void Download(TorrentModel torrentModel)
         {
             var peer = new Peer(new object());
-            peer.Process(torrentModel.TrackerResponse.First(), torrentModel.Info);
+            //TotalPeer = torrentModel.TrackerResponse.Count;
+            //foreach (var item in torrentModel.TrackerResponse.SelectMany(m => m.Peers))
+            //{
+            //    try
+            //    {
+            //        peer.Process(item, torrentModel.Info);
+            //    }
+            //    catch (Exception ex)
+            //    {
+            //        Console.WriteLine(ex.Message);
+            //    }
+            //}
+
+            TotalPeer = 1;
+            peer.Process(torrentModel.TrackerResponse.First().Peers.First(), torrentModel.Info);
+            Console.WriteLine("全部尝试完毕");
         }
     }
 
@@ -42,11 +59,11 @@ namespace Torrent
         private object _lock;
 
 
-        public void Process(TrackerResponse trackerResponse, Info info)
+        public void Process(IPEndPoint ip, Info info)
         {
             var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-            socket.Connect(trackerResponse.IPEndPoint);
-
+            socket.Connect(ip);
+            Console.WriteLine("连接：" + ip);
             //handshake:<pstrlen><pstr><reserved><info_hash><peer_id>
             //"BitTorrent protocol"
             byte[] handshakeByte = null;
@@ -61,164 +78,179 @@ namespace Torrent
                 handshakeByte = ms.ToArray();
             }
 
-            socket.Send(handshakeByte);
+            Console.WriteLine("对：" + ip + ",发送handshake");
+            socket.SendEnsure(handshakeByte, handshakeByte.Length, SocketFlags.None);
 
             //发送感兴趣
+            Console.WriteLine("对：" + ip + ",发送Interested");
             SendInterested();
+            //发送unchok
+            SendUnChoke();
             //request请求
             //SendRequest();
 
             Task.Factory.StartNew(obj =>
             {
-                var soc = obj as Socket;
-                int messageLen = 0;
-                while (true)
+                try
                 {
-                    var bufBegin = new byte[4];
-                    soc.ReceiveEnsure(bufBegin, 4, SocketFlags.None);
-                    messageLen = BitConverter.ToInt32(bufBegin, 0);
-                    messageLen = IPAddress.NetworkToHostOrder(messageLen);
-                    if (messageLen == 0)
+                    var soc = obj as Socket;
+                    int messageLen = 0;
+                    while (true)
                     {
-                        KeepAlive();
-                    }
-                    else
-                    {
-                        var bufType = new byte[1];
-                        soc.ReceiveEnsure(bufType, 1, SocketFlags.None);
-                        var id = bufType[0];
-                        switch (id)
+                        var bufBegin = new byte[4];
+                        soc.ReceiveEnsure(bufBegin, 4, SocketFlags.None);
+                        messageLen = BitConverter.ToInt32(bufBegin, 0);
+                        messageLen = IPAddress.NetworkToHostOrder(messageLen);
+                        if (messageLen == 0)
                         {
-                            case 0:
-                                Choke();
-                                break;
-                            case 1:
-                                UnChoke();
-                                break;
-                            case 2:
-                                Interested();
-                                break;
-                            case 3:
-                                NotInterested();
-                                break;
-                            case 4:
-                                Have();
-                                break;
-                            case 5:
-                                Bitfield();
-                                break;
-                            case 6:
-                                Request();
-                                break;
-                            case 7:
-                                Piece();
-                                break;
-                            case 8:
-                                Cancel();
-                                break;
-                            case 9:
-                                Port();
-                                break;
-                            default:
-                                break;
+                            KeepAlive();
                         }
-
-                        void Port()
+                        else
                         {
-                            var buf = new byte[2];
-                            soc.ReceiveEnsure(buf, 2, SocketFlags.None);
-                            Console.WriteLine("处理：port");
-                        }
-
-                        void Cancel()
-                        {
-                            var buf = new byte[4];
-                            soc.ReceiveEnsure(buf, 4, SocketFlags.None);
-                            var index = IPAddress.NetworkToHostOrder(BitConverter.ToInt32(buf, 0));
-                            soc.ReceiveEnsure(buf, 4, SocketFlags.None);
-                            var begin = IPAddress.NetworkToHostOrder(BitConverter.ToInt32(buf, 0));
-                            soc.ReceiveEnsure(buf, 4, SocketFlags.None);
-                            var length = IPAddress.NetworkToHostOrder(BitConverter.ToInt32(buf, 0));
-                            Console.WriteLine("处理：Cancel");
-                        }
-
-                        void Piece()
-                        {
-                            Console.WriteLine("处理：Piece");
-                            var buf = new byte[messageLen - 9];
-                            soc.ReceiveEnsure(buf, 4, SocketFlags.None);
-                            var index = IPAddress.NetworkToHostOrder(BitConverter.ToInt32(buf, 0));
-                            soc.ReceiveEnsure(buf, 4, SocketFlags.None);
-                            var begin = IPAddress.NetworkToHostOrder(BitConverter.ToInt32(buf, 0));
-                            soc.ReceiveEnsure(buf, messageLen - 9, SocketFlags.None);
-                            lock (_lock)
+                            var bufType = new byte[1];
+                            soc.ReceiveEnsure(bufType, 1, SocketFlags.None);
+                            var id = bufType[0];
+                            switch (id)
                             {
-                                using (var fs = new FileStream("a.db", FileMode.OpenOrCreate))
+                                case 0:
+                                    Choke();
+                                    break;
+                                case 1:
+                                    UnChoke();
+                                    break;
+                                case 2:
+                                    Interested();
+                                    break;
+                                case 3:
+                                    NotInterested();
+                                    break;
+                                case 4:
+                                    Have();
+                                    break;
+                                case 5:
+                                    Bitfield();
+                                    break;
+                                case 6:
+                                    Request();
+                                    break;
+                                case 7:
+                                    Piece();
+                                    break;
+                                case 8:
+                                    Cancel();
+                                    break;
+                                case 9:
+                                    Port();
+                                    break;
+                                default:
+                                    break;
+                            }
+
+                            void Port()
+                            {
+                                var buf = new byte[2];
+                                soc.ReceiveEnsure(buf, 2, SocketFlags.None);
+                                Console.WriteLine("处理：port");
+                            }
+
+                            void Cancel()
+                            {
+                                var buf = new byte[4];
+                                soc.ReceiveEnsure(buf, 4, SocketFlags.None);
+                                var index = IPAddress.NetworkToHostOrder(BitConverter.ToInt32(buf, 0));
+                                soc.ReceiveEnsure(buf, 4, SocketFlags.None);
+                                var begin = IPAddress.NetworkToHostOrder(BitConverter.ToInt32(buf, 0));
+                                soc.ReceiveEnsure(buf, 4, SocketFlags.None);
+                                var length = IPAddress.NetworkToHostOrder(BitConverter.ToInt32(buf, 0));
+                                Console.WriteLine("处理：Cancel");
+                            }
+
+                            void Piece()
+                            {
+                                Console.WriteLine("处理：Piece");
+                                var buf = new byte[messageLen - 9];
+                                soc.ReceiveEnsure(buf, 4, SocketFlags.None);
+                                var index = IPAddress.NetworkToHostOrder(BitConverter.ToInt32(buf, 0));
+                                soc.ReceiveEnsure(buf, 4, SocketFlags.None);
+                                var begin = IPAddress.NetworkToHostOrder(BitConverter.ToInt32(buf, 0));
+                                soc.ReceiveEnsure(buf, messageLen - 9, SocketFlags.None);
+                                lock (_lock)
                                 {
-                                    fs.Position = index * info.Piece_length + begin;
-                                    fs.Write(buf, 0, buf.Length);
+                                    using (var fs = new FileStream("a.db", FileMode.OpenOrCreate))
+                                    {
+                                        fs.Position = index * info.Piece_length + begin;
+                                        fs.Write(buf, 0, buf.Length);
+                                    }
                                 }
+                            }
+
+                            void Request()
+                            {
+                                Console.WriteLine("处理：Request");
+                                var buf = new byte[4];
+                                soc.ReceiveEnsure(buf, 4, SocketFlags.None);
+                                var index = IPAddress.NetworkToHostOrder(BitConverter.ToInt32(buf, 0));
+                                soc.ReceiveEnsure(buf, 4, SocketFlags.None);
+                                var begin = IPAddress.NetworkToHostOrder(BitConverter.ToInt32(buf, 0));
+                                soc.ReceiveEnsure(buf, 4, SocketFlags.None);
+                                var length = IPAddress.NetworkToHostOrder(BitConverter.ToInt32(buf, 0));
+                            }
+
+                            void Bitfield()
+                            {
+                                Console.WriteLine("处理：Bitfield");
+                                var len = messageLen - 1;
+                                var buf = new byte[len];
+                                soc.ReceiveEnsure(buf, len, SocketFlags.None);
+                            }
+
+                            void Have()
+                            {
+                                Console.WriteLine("处理：Have");
+                                var buf = new byte[4];
+                                soc.ReceiveEnsure(buf, 4, SocketFlags.None);
+                                var haveIndex = IPAddress.NetworkToHostOrder(BitConverter.ToInt32(buf, 0));
+                                _haveIndexArray.Add(haveIndex);
+                            }
+
+                            void NotInterested()
+                            {
+                                Console.WriteLine("处理：NotInterested");
+                                _peer_interested = false;
+                            }
+
+                            void Interested()
+                            {
+                                Console.WriteLine("处理：Interested");
+                                _peer_interested = true;
+                            }
+
+                            void UnChoke()
+                            {
+                                Console.WriteLine("处理：UnChoke");
+                                _peer_choking = false;
+                                SendRequest();
+                            }
+
+                            void Choke()
+                            {
+                                Console.WriteLine("处理：Choke");
+                                _peer_choking = true;
                             }
                         }
 
-                        void Request()
+                        void KeepAlive()
                         {
-                            Console.WriteLine("处理：Request");
-                            var buf = new byte[4];
-                            soc.ReceiveEnsure(buf, 4, SocketFlags.None);
-                            var index = IPAddress.NetworkToHostOrder(BitConverter.ToInt32(buf, 0));
-                            soc.ReceiveEnsure(buf, 4, SocketFlags.None);
-                            var begin = IPAddress.NetworkToHostOrder(BitConverter.ToInt32(buf, 0));
-                            soc.ReceiveEnsure(buf, 4, SocketFlags.None);
-                            var length = IPAddress.NetworkToHostOrder(BitConverter.ToInt32(buf, 0));
-                        }
-
-                        void Bitfield()
-                        {
-                            Console.WriteLine("处理：Bitfield");
-                            var len = messageLen - 1;
-                            var buf = new byte[len];
-                            soc.ReceiveEnsure(buf, len, SocketFlags.None);
-                        }
-
-                        void Have()
-                        {
-                            Console.WriteLine("处理：Have");
-                            var buf = new byte[4];
-                            soc.ReceiveEnsure(buf, 4, SocketFlags.None);
-                            var haveIndex = IPAddress.NetworkToHostOrder(BitConverter.ToInt32(buf, 0));
-                            _haveIndexArray.Add(haveIndex);
-                        }
-
-                        void NotInterested()
-                        {
-                            Console.WriteLine("处理：NotInterested");
-                            _peer_interested = false;
-                        }
-
-                        void Interested()
-                        {
-                            Console.WriteLine("处理：Interested");
-                            _peer_interested = true;
-                        }
-
-                        void UnChoke()
-                        {
-                            Console.WriteLine("处理：UnChoke");
-                            _peer_choking = false;
-                            SendRequest();
-                        }
-
-                        void Choke()
-                        {
-                            Console.WriteLine("处理：Choke");
-                            _peer_choking = true;
+                            Console.WriteLine("处理：KeepAlive");
                         }
                     }
-
-                    void KeepAlive()
+                }
+                catch (Exception ex)
+                {
+                    Tcp.ErrNum++;
+                    if (Tcp.ErrNum == Tcp.TotalPeer)
                     {
-                        Console.WriteLine("处理：KeepAlive");
+                        Console.WriteLine("全部结束");
                     }
                 }
 
@@ -250,6 +282,16 @@ namespace Torrent
                 arr.AddRange(BitConverter.GetBytes(begin));
                 arr.AddRange(BitConverter.GetBytes(length));
                 socket.SendEnsure(arr.ToArray(), 14, SocketFlags.None);
+            }
+            void SendUnChoke()
+            {
+                //<len=0001><id=1>
+                var type = IPAddress.HostToNetworkOrder(1);
+                byte id = 1;
+                var data = BitConverter.GetBytes(type).ToList(); ;
+                data.Add(id);
+                socket.SendEnsure(data.ToArray(), data.Count, SocketFlags.None);
+                _am_choking = false;
             }
         }
 

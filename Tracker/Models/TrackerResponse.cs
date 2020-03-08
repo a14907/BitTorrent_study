@@ -133,8 +133,13 @@ namespace Tracker.Models
                     for (int i = 0; i < count; i++)
                     {
                         var section = buf.Skip(i * 6).Take(6);
-                        IPAddress iPAddress = new IPAddress(buf.Take(4).ToArray());
+                        IPAddress iPAddress = new IPAddress(section.Take(4).ToArray());
                         var port = BitConverter.ToUInt16(section.ToArray(), 4);
+
+
+                        //IPAddress iPAddress = new IPAddress(IPAddress.NetworkToHostOrder(BitConverter.ToInt32(section.Take(4).ToArray(), 0)));
+                        //var port = IPAddress.NetworkToHostOrder(BitConverter.ToInt16(section.ToArray(), 4));
+
                         ls[i] = new IPEndPoint(iPAddress, port);
                     }
                     _peers = ls.Distinct().ToArray();
