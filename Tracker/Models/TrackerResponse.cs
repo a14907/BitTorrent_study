@@ -134,7 +134,7 @@ namespace Tracker.Models
                     {
                         var section = buf.Skip(i * 6).Take(6);
                         IPAddress iPAddress = new IPAddress(section.Take(4).ToArray());
-                        var port = BitConverter.ToUInt16(section.ToArray(), 4);
+                        var port = (int)FromBytes(section.Skip(4).Take(2).ToArray(), 0, 2);
 
 
                         //IPAddress iPAddress = new IPAddress(IPAddress.NetworkToHostOrder(BitConverter.ToInt32(section.Take(4).ToArray(), 0)));
@@ -150,6 +150,16 @@ namespace Tracker.Models
             {
                 _peers = value;
             }
+        }
+
+        long FromBytes(byte[] buffer, int startIndex, int bytesToConvert)
+        {
+            long ret = 0L;
+            for (int i = 0; i < bytesToConvert; i++)
+            {
+                ret = (ret << 8 | buffer[startIndex + i]);
+            }
+            return ret;
         }
     }
 }
