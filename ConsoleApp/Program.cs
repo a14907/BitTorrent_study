@@ -16,21 +16,21 @@ namespace ConsoleApp
         {
 
             var server = new UdpServer(Http.Port);
-            var tcp  = new Tcp( );
-            server.Start(); 
+            var tcp = new Tcp();
+            server.Start();
             using (var fs = new FileStream("b.torrent", FileMode.Open))
             {
                 var data = Parser.Decode(fs);
                 TorrentModel torrentModel = new TorrentModel(data as DictionaryField);
 
                 var res = await torrentModel.TrackAsync();
-                var res2 = await torrentModel.ScrapeAsync();
-                server.Connecting(torrentModel);
-
+                //var res2 = await torrentModel.ScrapeAsync();
+                //server.Connecting(torrentModel);
+                tcp.Download(torrentModel);
             }
             Console.WriteLine("OK");
             Console.ReadKey();
-            server.Stop(); 
+            server.Stop();
         }
     }
 }

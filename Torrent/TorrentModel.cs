@@ -123,6 +123,20 @@ namespace Torrent
         }
         public long Piece_length { get { return (_dictionaryField["piece length"] as NumberField)?.Value ?? 0; } }
         public string Pieces { get { return (_dictionaryField["pieces"] as StringField)?.Value; } }
+        public List<byte[]> PiecesHashArray
+        {
+            get
+            {
+                var arr = (_dictionaryField["pieces"] as StringField)?.Buffer;
+                var c = arr.Length / 20;
+                var ls = new List<byte[]>();
+                for (int i = 0; i < c; i++)
+                {
+                    ls.Add(arr.Skip(20 * i).Take(20).ToArray());
+                }
+                return ls;
+            }
+        }
         public long Private { get { return (_dictionaryField["private"] as NumberField)?.Value ?? 0; } }
         public string Name { get { return (_dictionaryField["Name"] as StringField)?.Value; } }
 

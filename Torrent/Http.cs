@@ -70,11 +70,12 @@ namespace Torrent
                     {
                         continue;
                     }
+                    Console.WriteLine("请求" + b.Url + "成功：");
                     ls.Add(m);
                 }
                 catch (Exception e)
                 {
-                    Console.WriteLine("请求" + b.Url + "发生错误：" + e.Message);
+                    //Console.WriteLine("请求" + b.Url + "发生错误：" + e.Message);
                 }
             }
             model.TrackerResponse.AddRange(ls);
@@ -105,6 +106,7 @@ namespace Torrent
                     var url = $"{baseUrl}?info_hash=" + info_hash;
                     var buf = await _httpClient.GetByteArrayAsync(url);
                     var dic = Parser.DecodingDictionary(new MemoryStream(buf));
+                    Console.WriteLine("对" + announceUrl + "进行scrape查询成功");
                     ls.Add(dic);
                 }
                 catch (Exception ex)
