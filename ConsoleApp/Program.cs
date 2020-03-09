@@ -1,12 +1,9 @@
 ﻿using Bencoding;
 using Bencoding.Model;
 using System;
-using System.Collections.Generic;
 using System.IO;
-using System.Net;
 using System.Threading.Tasks;
 using Torrent;
-using Tracker;
 
 namespace ConsoleApp
 {
@@ -14,10 +11,10 @@ namespace ConsoleApp
     {
         static async Task Main(string[] args)
         {
-
-            var server = new UdpServer(Http.Port);
+            var aaa = typeof(BitConverter).Assembly.Location;
+            //var server = new UdpServer(Http.Port);
             var tcp = new Tcp();
-            server.Start();
+            //server.Start();
             using (var fs = new FileStream("b.torrent", FileMode.Open))
             {
                 var data = Parser.Decode(fs);
@@ -30,7 +27,7 @@ namespace ConsoleApp
             }
             Console.WriteLine("OK");
             Console.ReadKey();
-            server.Stop();
+            //server.Stop();
         }
     }
 }

@@ -1,15 +1,15 @@
 ﻿using Bencoding;
 using Bencoding.Model;
 using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
-using System.Linq;
-using System.IO;
-using Tracker.Models;
-using System.Collections.Generic;
 using Tracker;
+using Tracker.Models;
 
 namespace Torrent
 {
@@ -72,7 +72,6 @@ namespace Torrent
                     }
                     Console.WriteLine("请求" + b.Url + "成功：");
                     ls.Add(m);
-                    break;
                 }
                 catch (Exception e)
                 {
