@@ -2,6 +2,7 @@
 using Bencoding.Model;
 using System;
 using System.IO;
+using System.Net;
 using System.Threading.Tasks;
 using Torrent;
 
