@@ -22,10 +22,33 @@ namespace Torrent
         private readonly DictionaryField _dictionaryField;
         private readonly Guid _guid = Guid.NewGuid();
 
+        public Dictionary<int, bool> DownloadState;
+
+        public byte[] Bitfield
+        {
+            get
+            {
+                var buf = new byte[(int)Math.Ceiling(Info.PiecesHashArray.Count / (1.0 * 8))];
+                for (int i = 0; i < Info.PiecesHashArray.Count; i++)
+                {
+                    var index = i / 8;
+                    var bit = 7 - (i - index * 8);
+                    var val = DownloadState[i] ? 1 : 0;
+                    buf[index] = (byte)(buf[index] | (val << bit));
+                }
+                return buf;
+            }
+        }
+
         public TorrentModel(DictionaryField dictionaryField)
         {
             _dictionaryField = dictionaryField;
             Info = new Info(dictionaryField["info"] as DictionaryField);
+            DownloadState = new Dictionary<int, bool>(Info.PiecesHashArray.Count);
+            for (int i = 0; i < Info.PiecesHashArray.Count; i++)
+            {
+                DownloadState[i] = false;
+            }
         }
         public Guid Id { get { return _guid; } }
 
