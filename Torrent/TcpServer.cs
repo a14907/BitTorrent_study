@@ -1,10 +1,12 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Torrent
@@ -13,6 +15,7 @@ namespace Torrent
     {
         public static int TotalPeer;
         public static int ErrNum;
+        public static SemaphoreSlim SemaphoreSlim = new SemaphoreSlim(10, 10);
         public Tcp()
         {
         }
@@ -20,7 +23,7 @@ namespace Torrent
         public void Download(TorrentModel torrentModel)
         {
             var localIp = IPAddress.Parse("127.0.0.1");
-            var data = torrentModel.TrackerResponse.SelectMany(m => m.Peers).Where(m => !m.Address.Equals(localIp)).OrderBy(m => Guid.NewGuid()).ToList();
+            var data = torrentModel.TrackerResponse.SelectMany(m => m.Peers).Where(m => !m.Address.Equals(localIp)).Distinct(new IPEndPointCompare()).OrderBy(m => Guid.NewGuid()).ToList();
             if (data.Count == 0)
             {
                 Console.WriteLine("没有满足条件的track");
@@ -32,20 +35,10 @@ namespace Torrent
             var lockObj = new object();
             foreach (var item in data)
             {
-                try
-                {
-                    var peer = new Peer(lockObj);
-                    peer.Process(item, torrentModel.Info, torrentModel);
-                    torrentModel.Peers.Add(peer);
-                    //while (peer.IsConnect)
-                    //{
-                    //    Thread.Sleep(1000);
-                    //}
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine(ex.Message);
-                }
+                SemaphoreSlim.Wait();
+                var peer = new Peer(lockObj);
+                peer.Process(item, torrentModel.Info, torrentModel);
+                torrentModel.Peers.Add(peer);
             }
 
 
@@ -117,6 +110,8 @@ namespace Torrent
                 {
                     Console.WriteLine(ip + " , " + ex.Message);
                     IsConnect = false;
+                    Tcp.SemaphoreSlim.Release();
+                    torrentModel.Peers.Remove(this);
                     return;
                 }
 
@@ -250,11 +245,11 @@ namespace Torrent
 
                                 void Have()
                                 {
-                                    Console.WriteLine(ip + ",处理：Have");
                                     var buf = new byte[4];
                                     soc.ReceiveEnsure(buf, 4, SocketFlags.None, $"{ip}, Have ");
                                     var haveIndex = IPAddress.NetworkToHostOrder(BitConverter.ToInt32(buf, 0));
                                     _haveIndexArray.Add(haveIndex);
+                                    Console.WriteLine(ip + ",处理：Have-" + haveIndex);
                                     //SendRequest(haveIndex);
                                 }
 
@@ -296,6 +291,7 @@ namespace Torrent
                                     return;
                                 }
                                 int sum = 0;
+                                string str = "";
                                 for (int i = 0; i < buf.Length; i++)
                                 {
                                     var item = buf[i];
@@ -306,9 +302,11 @@ namespace Torrent
                                         {
                                             break;
                                         }
-                                        HaveState[sum] = (item & (1 << (7 - i))) == 0 ? false : true;
+                                        HaveState[sum] = (item & (1 << (7 - j))) == 0 ? false : true;
+                                        str += HaveState[sum] ? "1" : "0";
                                     }
                                 }
+                                Console.WriteLine($"{ip} Bitfield的结果 base64:" + Convert.ToBase64String(buf) + " str.length:" + str.Length + " str：" + str + " BitArray:" + new BitArray(buf).Cast<bool>().Select(m => m ? "1" : "0").Aggregate("", (s, item) => s + item));
                             }
                         }
 
@@ -343,6 +341,8 @@ namespace Torrent
                         Tcp.ErrNum++;
                         IsConnect = false;
                         Console.WriteLine(ip + "，结束 " + ex.Message);
+                        Tcp.SemaphoreSlim.Release();
+                        torrentModel.Peers.Remove(this);
                         if (Tcp.ErrNum == Tcp.TotalPeer)
                         {
                             Console.WriteLine("全部结束");
