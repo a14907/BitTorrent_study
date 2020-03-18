@@ -302,6 +302,10 @@ namespace Torrent
                                     for (int j = 0; j < 8; j++)
                                     {
                                         sum++;
+                                        if (sum > torrentModel.DownloadState.Count)
+                                        {
+                                            break;
+                                        }
                                         HaveState[sum] = (item & (1 << (7 - i))) == 0 ? false : true;
                                     }
                                 }

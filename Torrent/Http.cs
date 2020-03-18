@@ -72,11 +72,6 @@ namespace Torrent
                     }
                     Console.WriteLine("请求" + b.Url + "成功：");
                     ls.Add(m);
-                    //测试阶段 只需要少数几个成功就可以了
-                    if (ls.Count == 10)
-                    {
-                        break;
-                    }
                 }
                 catch (Exception e)
                 {
