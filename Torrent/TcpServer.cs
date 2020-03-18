@@ -5,7 +5,6 @@ using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
-using System.Threading;
 using System.Threading.Tasks;
 
 namespace Torrent
@@ -14,14 +13,12 @@ namespace Torrent
     {
         public static int TotalPeer;
         public static int ErrNum;
-        public static bool IsGoNextPeer = true;
         public Tcp()
         {
         }
 
         public void Download(TorrentModel torrentModel)
         {
-            var peer = new Peer(new object());
             var localIp = IPAddress.Parse("127.0.0.1");
             var data = torrentModel.TrackerResponse.SelectMany(m => m.Peers).Where(m => !m.Address.Equals(localIp)).OrderBy(m => Guid.NewGuid()).ToList();
             if (data.Count == 0)
@@ -32,16 +29,18 @@ namespace Torrent
 
             TotalPeer = data.Count;
             Console.WriteLine("ip总数：" + TotalPeer);
+            var lockObj = new object();
             foreach (var item in data)
             {
                 try
                 {
-                    if (!IsGoNextPeer)
-                    {
-                        Thread.Sleep(1000);
-                    }
+                    var peer = new Peer(lockObj);
                     peer.Process(item, torrentModel.Info, torrentModel);
-                    IsGoNextPeer = false;
+                    torrentModel.Peers.Add(peer);
+                    //while (peer.IsConnect)
+                    //{
+                    //    Thread.Sleep(1000);
+                    //}
                 }
                 catch (Exception ex)
                 {
@@ -54,7 +53,7 @@ namespace Torrent
         }
     }
 
-    internal class Peer
+    public class Peer
     {
         public Peer(object lockObj)
         {
@@ -72,15 +71,16 @@ namespace Torrent
         private object _lock;
         public Dictionary<int, bool> HaveState = new Dictionary<int, bool>();
 
+        public bool IsConnect = false;
+
 
         public void Process(IPEndPoint ip, Info info, TorrentModel torrentModel)
         {
             var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-            socket.ReceiveTimeout = 5000;
-            socket.SendTimeout = 5000;
             //Console.WriteLine(ip + "， 开始连接");
             socket.BeginConnect(ip, ConnectCallback, null);
             //Console.WriteLine(ip + "， 等待连接回调");
+            IsConnect = true;
 
             void ConnectCallback(IAsyncResult ar)
             {
@@ -102,16 +102,21 @@ namespace Torrent
                         handshakeByte = ms.ToArray();
                     }
 
-                    Console.WriteLine(ip + ",发送handshake");
                     socket.SendEnsure(handshakeByte, handshakeByte.Length, SocketFlags.None, $"{ip}, sendHandShake ");
+                    Console.WriteLine(ip + ",发送handshake成功");
 
                     //发送Bitfield
                     SendBitfield();
+
+                    //发送unchok
+                    SendUnChoke();
+                    //发送感兴趣
+                    SendInterested();
                 }
                 catch (Exception ex)
                 {
                     Console.WriteLine(ip + " , " + ex.Message);
-                    Tcp.IsGoNextPeer = true;
+                    IsConnect = false;
                     return;
                 }
 
@@ -125,9 +130,6 @@ namespace Torrent
                         //handshake:<pstrlen><pstr><reserved><info_hash><peer_id>
                         //接收handshake消息
                         ReceiveHandshake();
-
-                        //发送unchok
-                        SendUnChoke();
 
                         while (true)
                         {
@@ -244,14 +246,6 @@ namespace Torrent
                                     soc.ReceiveEnsure(buf, len, SocketFlags.None, $"{ip}, Bitfield ");
                                     SetHaveState(buf);
 
-                                    var fetch = HaveState.Any(m => m.Value == true);
-                                    if (fetch)
-                                    {
-                                        //发送感兴趣
-                                        SendInterested();
-                                        var fetchIndex = HaveState.First(m => m.Value == true).Key;
-                                        SendRequest(fetchIndex);
-                                    }
                                 }
 
                                 void Have()
@@ -343,7 +337,7 @@ namespace Torrent
                     catch (Exception ex)
                     {
                         Tcp.ErrNum++;
-                        Tcp.IsGoNextPeer = true;
+                        IsConnect = false;
                         Console.WriteLine(ip + "，结束 " + ex.Message);
                         if (Tcp.ErrNum == Tcp.TotalPeer)
                         {
@@ -362,6 +356,7 @@ namespace Torrent
                 data.Add(id);
                 socket.SendEnsure(data.ToArray(), data.Count, SocketFlags.None, $"{ip}, SendInterested ");
                 _am_interested = true;
+                Console.WriteLine($"{ip}, SendInterested 成功");
             }
 
             void SendBitfield()
@@ -373,6 +368,8 @@ namespace Torrent
                 socket.SendEnsure(BitConverter.GetBytes(IPAddress.HostToNetworkOrder(len)), 4, SocketFlags.None, $"{ip} 发送Bitfield");
                 socket.SendEnsure(new byte[] { 5 }, 1, SocketFlags.None, $"{ip} 发送Bitfield");
                 socket.SendEnsure(buf, buf.Length, SocketFlags.None, $"{ip} 发送Bitfield");
+
+                Console.WriteLine($"{ip} 发送Bitfield成功");
             }
 
             void SendRequest(int requestIndex)
@@ -401,6 +398,7 @@ namespace Torrent
                 data.Add(id);
                 socket.SendEnsure(data.ToArray(), data.Count, SocketFlags.None, $"{ip}, SendUnChoke ");
                 _am_choking = false;
+                Console.WriteLine($"{ip}, SendUnChoke 成功");
             }
         }
 

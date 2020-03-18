@@ -13,7 +13,7 @@ namespace Torrent
                 readlen = socket.Receive(buffer, size - sum, socketFlags);
                 if (readlen == 0)
                 {
-                    throw new Exception(logscope + "断开连接了");
+                    throw new Exception(logscope + "断开连接了  socket.Connected:" + socket.Connected + "  socket.Available:" + socket.Available);
                 }
                 sum += readlen;
                 if (sum == size)
@@ -30,7 +30,7 @@ namespace Torrent
                 sendlen = socket.Send(buffer, size - sum, socketFlags);
                 if (sendlen == 0)
                 {
-                    throw new Exception(logscope + "断开连接了");
+                    throw new Exception(logscope + "断开连接了 socket.Connected:" + socket.Connected + "  socket.Available:" + socket.Available);
                 }
                 sum += sendlen;
                 if (sum == size)

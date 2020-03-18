@@ -2,7 +2,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using Tracker.Models;
 
 namespace Torrent
@@ -23,6 +22,8 @@ namespace Torrent
         private readonly Guid _guid = Guid.NewGuid();
 
         public Dictionary<int, bool> DownloadState;
+
+        public List<Peer> Peers = new List<Peer>();
 
         public byte[] Bitfield
         {
