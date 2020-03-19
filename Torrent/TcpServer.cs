@@ -63,13 +63,18 @@ namespace Torrent
         private List<int> _haveIndexArray = new List<int>();
         private object _lock;
         public Dictionary<int, bool> HaveState = new Dictionary<int, bool>();
+        private Socket socket;
+        public IPEndPoint ip;
+        private Info info;
 
         public bool IsConnect = false;
 
 
-        public void Process(IPEndPoint ip, Info info, TorrentModel torrentModel)
+        public void Process(IPEndPoint pip, Info pinfo, TorrentModel torrentModel)
         {
-            var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+            ip = pip;
+            info = pinfo;
+            socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
             //Console.WriteLine(ip + "， 开始连接");
             socket.BeginConnect(ip, ConnectCallback, null);
             //Console.WriteLine(ip + "， 等待连接回调");
@@ -209,6 +214,10 @@ namespace Torrent
 
                                     buf = new byte[messageLen - 9];
                                     soc.ReceiveEnsure(buf, buf.Length, SocketFlags.None, $"{ip}, Piece ");
+                                    if (buf.Length < torrentModel.Info.Piece_length)
+                                    {
+                                        Console.WriteLine($"{ip}, Piece 长度不够Piece_length");
+                                    }
                                     lock (_lock)
                                     {
                                         var filename = torrentModel.Info.Sha1Hash.Aggregate("", (sum, item) => sum + item.ToString("x2"));
@@ -218,6 +227,7 @@ namespace Torrent
                                             fs.Write(buf, 0, buf.Length);
                                         }
                                     }
+                                    //torrentModel.DownloadSemaphore.Release();
                                 }
 
                                 void Request()
@@ -354,29 +364,52 @@ namespace Torrent
 
             void SendInterested()
             {
-                var type = IPAddress.HostToNetworkOrder(1);
-                byte id = 2;
-                var data = BitConverter.GetBytes(type).ToList(); ;
-                data.Add(id);
-                socket.SendEnsure(data.ToArray(), data.Count, SocketFlags.None, $"{ip}, SendInterested ");
-                _am_interested = true;
-                Console.WriteLine($"{ip}, SendInterested 成功");
+                lock (_lock)
+                {
+                    var type = IPAddress.HostToNetworkOrder(1);
+                    byte id = 2;
+                    var data = BitConverter.GetBytes(type).ToList(); ;
+                    data.Add(id);
+                    socket.SendEnsure(data.ToArray(), data.Count, SocketFlags.None, $"{ip}, SendInterested ");
+                    _am_interested = true;
+                    Console.WriteLine($"{ip}, SendInterested 成功");
+                }
             }
 
             void SendBitfield()
             {
-                //bitfield: <len=0001+X><id=5><bitfield>
-                var buf = torrentModel.Bitfield;
-                var len = 1 + buf.Length;
+                lock (_lock)
+                {
+                    //bitfield: <len=0001+X><id=5><bitfield>
+                    var buf = torrentModel.Bitfield;
+                    var len = 1 + buf.Length;
 
-                socket.SendEnsure(BitConverter.GetBytes(IPAddress.HostToNetworkOrder(len)), 4, SocketFlags.None, $"{ip} 发送Bitfield");
-                socket.SendEnsure(new byte[] { 5 }, 1, SocketFlags.None, $"{ip} 发送Bitfield");
-                socket.SendEnsure(buf, buf.Length, SocketFlags.None, $"{ip} 发送Bitfield");
+                    socket.SendEnsure(BitConverter.GetBytes(IPAddress.HostToNetworkOrder(len)), 4, SocketFlags.None, $"{ip} 发送Bitfield");
+                    socket.SendEnsure(new byte[] { 5 }, 1, SocketFlags.None, $"{ip} 发送Bitfield");
+                    socket.SendEnsure(buf, buf.Length, SocketFlags.None, $"{ip} 发送Bitfield");
 
-                Console.WriteLine($"{ip} 发送Bitfield成功");
+                    Console.WriteLine($"{ip} 发送Bitfield成功");
+                }
             }
+            void SendUnChoke()
+            {
+                lock (_lock)
+                {
+                    //<len=0001><id=1>
+                    var type = IPAddress.HostToNetworkOrder(1);
+                    byte id = 1;
+                    var data = BitConverter.GetBytes(type).ToList(); ;
+                    data.Add(id);
+                    socket.SendEnsure(data.ToArray(), data.Count, SocketFlags.None, $"{ip}, SendUnChoke ");
+                    _am_choking = false;
+                    Console.WriteLine($"{ip}, SendUnChoke 成功");
+                }
+            }
+        }
 
-            void SendRequest(int requestIndex)
+        public void SendRequest(int requestIndex)
+        {
+            lock (_lock)
             {
                 Console.WriteLine(ip + ",发送：Request 请求序号：" + requestIndex);
                 //request: < len = 0013 >< id = 6 >< index >< begin >< length > 
@@ -392,17 +425,6 @@ namespace Torrent
                 buf.AddRange(BitConverter.GetBytes(IPAddress.NetworkToHostOrder(info.Piece_length)));
 
                 socket.SendEnsure(buf.ToArray(), buf.Count, SocketFlags.None, $"{ip}, 发送request, 序号：" + requestIndex);
-            }
-            void SendUnChoke()
-            {
-                //<len=0001><id=1>
-                var type = IPAddress.HostToNetworkOrder(1);
-                byte id = 1;
-                var data = BitConverter.GetBytes(type).ToList(); ;
-                data.Add(id);
-                socket.SendEnsure(data.ToArray(), data.Count, SocketFlags.None, $"{ip}, SendUnChoke ");
-                _am_choking = false;
-                Console.WriteLine($"{ip}, SendUnChoke 成功");
             }
         }
 

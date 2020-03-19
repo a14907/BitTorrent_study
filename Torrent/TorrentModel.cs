@@ -25,6 +25,8 @@ namespace Torrent
 
         public List<Peer> Peers = new List<Peer>();
 
+        //public SemaphoreSlim DownloadSemaphore = new SemaphoreSlim(1, 1);
+
         public byte[] Bitfield
         {
             get
