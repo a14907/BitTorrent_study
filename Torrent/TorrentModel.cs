@@ -14,16 +14,44 @@ namespace Torrent
         }
 
         public string Url { get; set; }
+    }
 
+    public class DownloadState
+    {
+
+        public DownloadState(bool isDownloded, bool isPeerDownloding)
+        {
+            IsDownloded = isDownloded;
+            IsPeerDownloding = isPeerDownloding;
+        }
+        public DownloadState()
+        {
+
+        }
+
+        public bool IsDownloded { get; set; }
+        public bool IsPeerDownloding { get; set; }
+        public Peer Peer { get; set; }
     }
     public partial class TorrentModel
     {
         private readonly DictionaryField _dictionaryField;
         private readonly Guid _guid = Guid.NewGuid();
 
-        public Dictionary<int, bool> DownloadState;
+        public Dictionary<int, DownloadState> DownloadState;
 
         public List<Peer> Peers = new List<Peer>();
+
+        public void SetPeerNull(Peer peer)
+        {
+            foreach (var item in DownloadState)
+            {
+                if (item.Value.Peer == peer)
+                {
+                    item.Value.Peer = null;
+                }
+            }
+        }
 
         //public SemaphoreSlim DownloadSemaphore = new SemaphoreSlim(1, 1);
 
@@ -36,7 +64,7 @@ namespace Torrent
                 {
                     var index = i / 8;
                     var bit = 7 - (i - index * 8);
-                    var val = DownloadState[i] ? 1 : 0;
+                    var val = DownloadState[i].IsDownloded ? 1 : 0;
                     buf[index] = (byte)(buf[index] | (val << bit));
                 }
                 return buf;
@@ -47,10 +75,10 @@ namespace Torrent
         {
             _dictionaryField = dictionaryField;
             Info = new Info(dictionaryField["info"] as DictionaryField);
-            DownloadState = new Dictionary<int, bool>(Info.PiecesHashArray.Count);
+            DownloadState = new Dictionary<int, DownloadState>(Info.PiecesHashArray.Count);
             for (int i = 0; i < Info.PiecesHashArray.Count; i++)
             {
-                DownloadState[i] = false;
+                DownloadState[i] = new DownloadState(false, false);
             }
         }
         public Guid Id { get { return _guid; } }

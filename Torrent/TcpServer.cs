@@ -54,12 +54,15 @@ namespace Torrent
         }
 
         private static byte[] _reserved = new byte[] { 0, 0, 0, 0, 0, 0, 0, 0 };
+        /// <summary>
+        /// BitTorrent protocol
+        /// </summary>
         private static byte[] _pstr = new byte[] { 66, 105, 116, 84, 111, 114, 114, 101, 110, 116, 32, 112, 114, 111, 116, 111, 99, 111, 108 };
 
-        private bool _am_choking = true;// 本客户端正在choke远程peer。 
-        private bool _am_interested = false;// 本客户端对远程peer感兴趣。 
-        private bool _peer_choking = true;// 远程peer正choke本客户端。 
-        private bool _peer_interested = false;// 远程peer对本客户端感兴趣。
+        public bool _am_choking = true;// 本客户端正在choke远程peer。 
+        public bool _am_interested = false;// 本客户端对远程peer感兴趣。 
+        public bool _peer_choking = true;// 远程peer正choke本客户端。 
+        public bool _peer_interested = false;// 远程peer对本客户端感兴趣。
         private List<int> _haveIndexArray = new List<int>();
         private object _lock;
         public Dictionary<int, bool> HaveState = new Dictionary<int, bool>();
@@ -106,10 +109,7 @@ namespace Torrent
                     //发送Bitfield
                     SendBitfield();
 
-                    //发送unchok
-                    SendUnChoke();
-                    //发送感兴趣
-                    SendInterested();
+
                 }
                 catch (Exception ex)
                 {
@@ -131,6 +131,11 @@ namespace Torrent
                         //接收handshake消息
                         ReceiveHandshake();
 
+                        //发送unchok
+                        SendUnChoke();
+
+                        //发送感兴趣
+                        SendInterested();
                         while (true)
                         {
 
@@ -180,7 +185,16 @@ namespace Torrent
                                         Port();
                                         break;
                                     default:
+                                        HandleOtherType();
                                         break;
+                                }
+
+                                void HandleOtherType()
+                                {
+                                    var extLen = messageLen - 1;
+                                    var ignoreBuf = new byte[extLen];
+                                    soc.ReceiveEnsure(ignoreBuf, extLen, SocketFlags.None, $"{ip} , 接收未知的扩展message");
+                                    Console.WriteLine("处理未知的message类型，长度：" + extLen);
                                 }
 
                                 void Port()
@@ -220,14 +234,16 @@ namespace Torrent
                                     }
                                     lock (_lock)
                                     {
-                                        var filename = torrentModel.Info.Sha1Hash.Aggregate("", (sum, item) => sum + item.ToString("x2"));
+                                        var filename = torrentModel.Info.Sha1Hash.Aggregate("", (sum, i) => sum + i.ToString("x2"));
                                         using (var fs = new FileStream($"{filename}.db", FileMode.OpenOrCreate))
                                         {
                                             fs.Position = index * info.Piece_length + begin;
                                             fs.Write(buf, 0, buf.Length);
                                         }
                                     }
-                                    //torrentModel.DownloadSemaphore.Release();
+                                    var item = torrentModel.DownloadState[index];
+                                    item.IsDownloded = true;
+                                    item.Peer = null;
                                 }
 
                                 void Request()
@@ -251,6 +267,35 @@ namespace Torrent
                                     soc.ReceiveEnsure(buf, len, SocketFlags.None, $"{ip}, Bitfield ");
                                     SetHaveState(buf);
 
+
+                                    _ = Task.Factory.StartNew(async () =>
+                                    {
+                                        Console.WriteLine(ip + " :开始下载任务");
+                                        for (int i = 0; i < torrentModel.DownloadState.Count; i++)
+                                        {
+                                            if (!this.IsConnect)
+                                            {
+                                                break;
+                                            }
+                                            await Task.Delay(3000);
+                                            Console.WriteLine(ip + " :===========判断序号是否存在：" + i);
+                                            var item = torrentModel.DownloadState[i];
+                                            if (!item.IsDownloded && !item.IsPeerDownloding)
+                                            {
+                                                if (this.IsConnect && this.HaveState.ContainsKey(i) && this.HaveState[i] && !this._peer_choking && this._am_interested)
+                                                {
+                                                    var p = this;
+                                                    Console.WriteLine(ip + " :======" + p.ip + "======请求" + i + "开始");
+                                                    //torrentModel.DownloadSemaphore.Wait();
+                                                    p.SendRequest(i);
+                                                    item.IsPeerDownloding = true;
+                                                    item.Peer = this;
+                                                    Console.WriteLine(ip + " :======" + p.ip + "======请求" + i + "完毕");
+                                                }
+                                            }
+                                        }
+
+                                    }, TaskCreationOptions.LongRunning);
                                 }
 
                                 void Have()
@@ -279,6 +324,10 @@ namespace Torrent
                                 {
                                     Console.WriteLine(ip + ",处理：UnChoke");
                                     _peer_choking = false;
+
+
+                                    //发送感兴趣
+                                    SendInterested();
                                 }
 
                                 void Choke()
@@ -353,6 +402,7 @@ namespace Torrent
                         Console.WriteLine(ip + "，结束 " + ex.Message);
                         Tcp.SemaphoreSlim.Release();
                         torrentModel.Peers.Remove(this);
+                        torrentModel.SetPeerNull(this);
                         if (Tcp.ErrNum == Tcp.TotalPeer)
                         {
                             Console.WriteLine("全部结束");
@@ -366,6 +416,7 @@ namespace Torrent
             {
                 lock (_lock)
                 {
+                    //<len=0001><id=2>
                     var type = IPAddress.HostToNetworkOrder(1);
                     byte id = 2;
                     var data = BitConverter.GetBytes(type).ToList(); ;

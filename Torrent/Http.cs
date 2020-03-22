@@ -21,12 +21,14 @@ namespace Torrent
 
         static Http()
         {
-            PeerIdBytes = new byte[20];
+            var str = "-WD0001-";
+            var data = Encoding.ASCII.GetBytes(str).ToList();
             var r = new Random();
-            for (int i = 0; i < 20; i++)
+            for (int i = 0; i < 12; i++)
             {
-                PeerIdBytes[i] = (byte)r.Next(0, 255);
+                data.Add((byte)r.Next(0, 255));
             }
+            PeerIdBytes = data.ToArray();
         }
         public static async Task<List<TrackerResponse>> TrackAsync(this TorrentModel model)
         {
