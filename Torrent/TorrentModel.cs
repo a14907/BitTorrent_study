@@ -104,6 +104,10 @@ namespace Torrent
                 {
                     _announce_list = (_dictionaryField["announce-list"] as ListField)?.Value
                     .Select(m => (m as ListField)?.Value.Select(n => new AnnounceItem((n as StringField)?.Value)).ToList()).ToList();
+                    if (_announce_list == null)
+                    {
+                        _announce_list = new List<List<AnnounceItem>>();
+                    }
                 }
                 return _announce_list;
             }
