@@ -197,7 +197,7 @@ namespace Torrent
             }
         }
         public long Private { get { return (_dictionaryField["private"] as NumberField)?.Value ?? 0; } }
-        public string Name { get { return (_dictionaryField["Name"] as StringField)?.Value; } }
+        public string Name { get { return (_dictionaryField["name"] as StringField)?.Value; } }
 
         #region 单文件
         public long Length { get { return (_dictionaryField["length"] as NumberField)?.Value ?? 0; } }
