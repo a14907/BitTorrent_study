@@ -31,6 +31,7 @@ namespace Torrent
 
         public bool IsDownloded { get; set; }
         public bool IsPeerDownloding { get; set; }
+        public int DownloadCount { get; set; }
         public Peer Peer { get; set; }
     }
     public partial class TorrentModel

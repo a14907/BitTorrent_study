@@ -24,6 +24,10 @@ namespace Torrent
         {
             var localIp = IPAddress.Parse("127.0.0.1");
             var data = torrentModel.TrackerResponse.SelectMany(m => m.Peers).Where(m => !m.Address.Equals(localIp)).Distinct(new IPEndPointCompare()).OrderBy(m => Guid.NewGuid()).ToList();
+
+            //测试，调试
+            data = new List<IPEndPoint> { new IPEndPoint(IPAddress.Parse("192.168.1.239"), 9288) };
+
             if (data.Count == 0)
             {
                 Console.WriteLine("没有满足条件的track");
@@ -73,7 +77,7 @@ namespace Torrent
         private Socket socket;
         public IPEndPoint ip;
         private Info info;
-
+        private TorrentModel TorrentModel;
         public bool IsConnect = false;
 
 
@@ -83,6 +87,7 @@ namespace Torrent
             {
                 ip = pip;
                 info = pinfo;
+                TorrentModel = torrentModel;
                 socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
                 //Console.WriteLine(ip + "， 开始连接");
                 socket.Connect(ip);
@@ -133,9 +138,8 @@ namespace Torrent
 
                     //发送unchok
                     SendUnChoke();
-
-                    //发送感兴趣
                     SendInterested();
+
                     while (true)
                     {
 
@@ -228,10 +232,7 @@ namespace Torrent
 
                                 buf = new byte[messageLen - 9];
                                 soc.ReceiveEnsure(buf, buf.Length, SocketFlags.None, $"{ip}, Piece ");
-                                if (buf.Length < torrentModel.Info.Piece_length)
-                                {
-                                    Console.WriteLine($"{ip}, Piece 长度不够Piece_length");
-                                }
+
                                 lock (_lock)
                                 {
                                     var filename = torrentModel.Info.Sha1Hash.Aggregate("", (sum, i) => sum + i.ToString("x2"));
@@ -240,10 +241,21 @@ namespace Torrent
                                         fs.Position = index * info.Piece_length + begin;
                                         fs.Write(buf, 0, buf.Length);
                                     }
+                                    var item = torrentModel.DownloadState[index];
+                                    item.DownloadCount += buf.Length;
+                                    if (item.DownloadCount == info.Piece_length
+                                    || (index == (torrentModel.DownloadState.Count - 1)
+                                        && item.DownloadCount == (info.Length - info.Piece_length * (torrentModel.DownloadState.Count - 1))))
+                                    {
+                                        item.IsDownloded = true;
+                                        item.Peer = null;
+                                        SendHave(index);
+                                    }
+                                    if (!torrentModel.DownloadState.Any(m => m.Value.IsDownloded == false))
+                                    {
+                                        Console.WriteLine("下载完毕");
+                                    }
                                 }
-                                var item = torrentModel.DownloadState[index];
-                                item.IsDownloded = true;
-                                item.Peer = null;
                             }
 
                             void Request()
@@ -267,22 +279,24 @@ namespace Torrent
                                 soc.ReceiveEnsure(buf, len, SocketFlags.None, $"{ip}, Bitfield ");
                                 SetHaveState(buf);
 
-
                                 _ = Task.Factory.StartNew(async () =>
                                 {
                                     Console.WriteLine(ip + " :开始下载任务");
+
+                                    await Task.Delay(3000);
+
                                     for (int i = 0; i < torrentModel.DownloadState.Count; i++)
                                     {
-                                        if (!this.IsConnect)
+                                        if (!IsConnect)
                                         {
                                             break;
                                         }
-                                        await Task.Delay(3000);
+                                        await Task.Delay(100);
                                         Console.WriteLine(ip + " :===========判断序号是否存在：" + i);
                                         var item = torrentModel.DownloadState[i];
                                         if (!item.IsDownloded && !item.IsPeerDownloding)
                                         {
-                                            if (this.IsConnect && this.HaveState.ContainsKey(i) && this.HaveState[i] && !this._peer_choking && this._am_interested)
+                                            if (IsConnect && HaveState.ContainsKey(i) && HaveState[i] && !_peer_choking && _am_interested)
                                             {
                                                 var p = this;
                                                 Console.WriteLine(ip + " :======" + p.ip + "======请求" + i + "开始");
@@ -325,9 +339,6 @@ namespace Torrent
                                 Console.WriteLine(ip + ",处理：UnChoke");
                                 _peer_choking = false;
 
-
-                                //发送感兴趣
-                                SendInterested();
                             }
 
                             void Choke()
@@ -372,23 +383,18 @@ namespace Torrent
                     void ReceiveHandshake()
                     {
                         Console.WriteLine(ip + "开始接收handshake");
-                        // pstrlen: < pstr > 的字符串长度，单个字节。 
                         var buf = new byte[1];
                         soc.ReceiveEnsure(buf, 1, SocketFlags.None, $"{ip}, ReceiveHandshake(pstrlen) ");
-                        // pstr: 协议的标识符，字符串类型。 
                         buf = new byte[buf[0]];
                         soc.ReceiveEnsure(buf, buf.Length, SocketFlags.None, $"{ip}, ReceiveHandshake(pstr) ");
                         Console.WriteLine("协议的标识符:" + Encoding.UTF8.GetString(buf));
-                        // reserved: 8个保留字节。当前的所有实现都使用全0.这些字节里面的每一个字节都可以用来改变协议的行为。来自Bram的邮件建议应该首先使用后面的位，以便可以使用前面的位来改变后面位的意义。 
                         buf = new byte[8];
                         soc.ReceiveEnsure(buf, 8, SocketFlags.None, $"{ip}, ReceiveHandshake(reserved-保留字节) ");
-                        // info_hash: 元信息文件中info键(key)对应值的20字节SHA1哈希。这个info_hash和在tracker请求中info_hash是同一个。 
+                        Console.WriteLine("reserved-保留字节：" + string.Join("-", buf));
                         buf = new byte[20];
                         soc.ReceiveEnsure(buf, buf.Length, SocketFlags.None, $"{ip}, ReceiveHandshake(info_hash) ");
-                        // 判断是否相同
                         var isequal = info.Sha1Hash.SequenceEqual(buf);
                         Console.WriteLine($"{ip}, Handshake接收到的info_hash和种子本身的：" + (isequal ? "相同" : "不相同"));
-                        // peer_id: 用于唯一标识客户端的20字节字符串。这个peer_id通常跟在tracker请求中传送的peer_id相同(但也不尽然，例如在Azureus，就有一个匿名选项)。
                         buf = new byte[20];
                         soc.ReceiveEnsure(buf, buf.Length, SocketFlags.None, $"{ip}, ReceiveHandshake(peer_id) ");
                         isequal = Http.PeerIdBytes.SequenceEqual(buf);
@@ -442,6 +448,25 @@ namespace Torrent
                     Console.WriteLine($"{ip} 发送Bitfield成功");
                 }
             }
+
+
+            void SendHave(int index)
+            {
+                lock (_lock)
+                {
+                    //<len=0005><id=4><piece index>
+                    var type = IPAddress.HostToNetworkOrder(5);
+                    byte id = 4;
+                    var data = BitConverter.GetBytes(type).ToList(); ;
+                    data.Add(id);
+                    data.AddRange(BitConverter.GetBytes(IPAddress.HostToNetworkOrder(index)));
+                    socket.SendEnsure(data.ToArray(), data.Count, SocketFlags.None, $"{ip}, SendHave ");
+                    _am_choking = false;
+                    Console.WriteLine($"{ip}, SendHave 成功");
+
+                }
+            }
+
             void SendUnChoke()
             {
                 lock (_lock)
@@ -468,14 +493,33 @@ namespace Torrent
                 //index: 整数，指定从零开始的piece索引。 
                 //begin: 整数，指定piece中从零开始的字节偏移。 
                 //length: 整数，指定请求的长度。
-                var buf = new List<byte>(17);
-                buf.AddRange(BitConverter.GetBytes(IPAddress.NetworkToHostOrder(13)));
-                buf.Add(6);
-                buf.AddRange(BitConverter.GetBytes(IPAddress.NetworkToHostOrder(requestIndex)));
-                buf.AddRange(BitConverter.GetBytes(IPAddress.NetworkToHostOrder(0)));
-                buf.AddRange(BitConverter.GetBytes(IPAddress.NetworkToHostOrder(info.Piece_length)));
 
-                socket.SendEnsure(buf.ToArray(), buf.Count, SocketFlags.None, $"{ip}, 发送request, 序号：" + requestIndex);
+                //16kb
+                var oneceLen = 16384;
+                var time = (int)Math.Ceiling(info.Piece_length * 1.0 / oneceLen);
+                int begin = 0;
+                int length = 0;
+                int total = (int)info.Piece_length;
+                if (requestIndex == TorrentModel.DownloadState.Count - 1)
+                {
+                    total = (int)(info.Length - (info.Piece_length * (TorrentModel.DownloadState.Count - 1)));
+                }
+                for (int i = 0; i < time; i++)
+                {
+                    begin = oneceLen * i;
+                    length = (int)Math.Min(oneceLen, total - begin);
+
+                    var buf = new List<byte>(17);
+                    buf.AddRange(BitConverter.GetBytes(IPAddress.NetworkToHostOrder(13)));
+                    buf.Add(6);
+                    buf.AddRange(BitConverter.GetBytes(IPAddress.NetworkToHostOrder(requestIndex)));
+                    buf.AddRange(BitConverter.GetBytes(IPAddress.NetworkToHostOrder(begin)));
+                    buf.AddRange(BitConverter.GetBytes(IPAddress.NetworkToHostOrder(length)));
+
+                    Console.WriteLine($"{ip}, 发送request, 序号：" + requestIndex + " begin:" + begin + " length:" + length);
+
+                    socket.SendEnsure(buf.ToArray(), buf.Count, SocketFlags.None, $"{ip}, 发送request, 序号：" + requestIndex);
+                }
             }
         }
 

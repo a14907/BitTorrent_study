@@ -128,6 +128,10 @@ namespace Tracker.Models
                         return _peers;
                     }
                     var buf = (_dictionaryField["peers"] as StringField)?.Buffer;
+                    if (buf == null)
+                    {
+                        return new IPEndPoint[0];
+                    }
                     int count = buf.Length / 6;
                     var ls = new IPEndPoint[count];
                     for (int i = 0; i < count; i++)
