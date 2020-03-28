@@ -23,7 +23,7 @@ namespace ConsoleApp
                 var data = Parser.Decode(fs);
                 TorrentModel torrentModel = new TorrentModel(data as DictionaryField);
 
-                var res = await torrentModel.TrackAsync();
+                //var res = await torrentModel.TrackAsync();
 
                 //var res2 = await torrentModel.ScrapeAsync();
                 //server.Connecting(torrentModel);

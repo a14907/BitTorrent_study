@@ -21,7 +21,7 @@ namespace Torrent
 
         static Http()
         {
-            var str = "-WD0001-";
+            var str = "-WQ0001-";
             var data = Encoding.ASCII.GetBytes(str).ToList();
             var r = new Random();
             for (int i = 0; i < 12; i++)

@@ -26,7 +26,10 @@ namespace Torrent
             var data = torrentModel.TrackerResponse.SelectMany(m => m.Peers).Where(m => !m.Address.Equals(localIp)).Distinct(new IPEndPointCompare()).OrderBy(m => Guid.NewGuid()).ToList();
 
             //测试，调试
-            data = new List<IPEndPoint> { new IPEndPoint(IPAddress.Parse("192.168.1.239"), 9288) };
+            data = new List<IPEndPoint> {
+                new IPEndPoint(IPAddress.Parse("192.168.1.102"), 29512),
+                //new IPEndPoint(IPAddress.Parse("192.168.1.102"), 18123)
+            };
 
             if (data.Count == 0)
             {
@@ -235,8 +238,8 @@ namespace Torrent
 
                                 lock (_lock)
                                 {
-                                    var filename = torrentModel.Info.Sha1Hash.Aggregate("", (sum, i) => sum + i.ToString("x2"));
-                                    using (var fs = new FileStream($"{filename}.db", FileMode.OpenOrCreate))
+                                    var filename = torrentModel.Info.Name;
+                                    using (var fs = new FileStream($"{filename}", FileMode.OpenOrCreate))
                                     {
                                         fs.Position = index * info.Piece_length + begin;
                                         fs.Write(buf, 0, buf.Length);
@@ -294,7 +297,7 @@ namespace Torrent
                                         {
                                             break;
                                         }
-                                        await Task.Delay(200);
+                                        //await Task.Delay(200);
                                         Console.WriteLine(ip + " :===========判断序号是否存在：" + i);
                                         var item = torrentModel.DownloadState[i];
                                         if (!item.IsDownloded)
