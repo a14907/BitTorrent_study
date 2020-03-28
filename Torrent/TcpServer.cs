@@ -283,7 +283,10 @@ namespace Torrent
                                 {
                                     Console.WriteLine(ip + " :开始下载任务");
 
-                                    await Task.Delay(3000);
+                                    while (_peer_choking)
+                                    {
+                                        await Task.Delay(3000);
+                                    }
 
                                     for (int i = 0; i < torrentModel.DownloadState.Count; i++)
                                     {
@@ -291,18 +294,17 @@ namespace Torrent
                                         {
                                             break;
                                         }
-                                        await Task.Delay(100);
+                                        await Task.Delay(200);
                                         Console.WriteLine(ip + " :===========判断序号是否存在：" + i);
                                         var item = torrentModel.DownloadState[i];
-                                        if (!item.IsDownloded && !item.IsPeerDownloding)
+                                        if (!item.IsDownloded)
                                         {
-                                            if (IsConnect && HaveState.ContainsKey(i) && HaveState[i] && !_peer_choking && _am_interested)
+                                            if (IsConnect && HaveState.ContainsKey(i) && HaveState[i] && _am_interested)
                                             {
                                                 var p = this;
                                                 Console.WriteLine(ip + " :======" + p.ip + "======请求" + i + "开始");
                                                 //torrentModel.DownloadSemaphore.Wait();
                                                 p.SendRequest(i);
-                                                item.IsPeerDownloding = true;
                                                 item.Peer = this;
                                                 Console.WriteLine(ip + " :======" + p.ip + "======请求" + i + "完毕");
                                             }
@@ -367,13 +369,13 @@ namespace Torrent
                                 var item = buf[i];
                                 for (int j = 0; j < 8; j++)
                                 {
-                                    sum++;
-                                    if (sum > torrentModel.DownloadState.Count)
+                                    if (sum >= torrentModel.DownloadState.Count)
                                     {
                                         break;
                                     }
                                     HaveState[sum] = (item & (1 << (7 - j))) == 0 ? false : true;
                                     str += HaveState[sum] ? "1" : "0";
+                                    sum++;
                                 }
                             }
                             Console.WriteLine($"{ip} Bitfield的结果 base64:" + Convert.ToBase64String(buf) + " str.length:" + str.Length + " str：" + str + " BitArray:" + new BitArray(buf).Cast<bool>().Select(m => m ? "1" : "0").Aggregate("", (s, item) => s + item));
@@ -496,14 +498,14 @@ namespace Torrent
 
                 //16kb
                 var oneceLen = 16384;
-                var time = (int)Math.Ceiling(info.Piece_length * 1.0 / oneceLen);
-                int begin = 0;
-                int length = 0;
                 int total = (int)info.Piece_length;
                 if (requestIndex == TorrentModel.DownloadState.Count - 1)
                 {
                     total = (int)(info.Length - (info.Piece_length * (TorrentModel.DownloadState.Count - 1)));
                 }
+                var time = (int)Math.Ceiling(total * 1.0 / oneceLen);
+                int begin = 0;
+                int length = 0;
                 for (int i = 0; i < time; i++)
                 {
                     begin = oneceLen * i;

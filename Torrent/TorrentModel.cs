@@ -19,10 +19,9 @@ namespace Torrent
     public class DownloadState
     {
 
-        public DownloadState(bool isDownloded, bool isPeerDownloding)
+        public DownloadState(bool isDownloded)
         {
             IsDownloded = isDownloded;
-            IsPeerDownloding = isPeerDownloding;
         }
         public DownloadState()
         {
@@ -30,7 +29,6 @@ namespace Torrent
         }
 
         public bool IsDownloded { get; set; }
-        public bool IsPeerDownloding { get; set; }
         public int DownloadCount { get; set; }
         public Peer Peer { get; set; }
     }
@@ -79,7 +77,7 @@ namespace Torrent
             DownloadState = new Dictionary<int, DownloadState>(Info.PiecesHashArray.Count);
             for (int i = 0; i < Info.PiecesHashArray.Count; i++)
             {
-                DownloadState[i] = new DownloadState(false, false);
+                DownloadState[i] = new DownloadState(false);
             }
         }
         public Guid Id { get { return _guid; } }
