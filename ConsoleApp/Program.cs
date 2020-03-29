@@ -12,8 +12,6 @@ namespace ConsoleApp
     {
         static async Task Main(string[] args)
         {
-
-
             //var server = new UdpServer(Http.Port);
             var tcp = new Tcp();
             //server.Start();

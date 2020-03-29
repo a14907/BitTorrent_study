@@ -1,8 +1,10 @@
 ﻿using Bencoding.Model;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using Tracker.Models;
 
 namespace Torrent
@@ -33,14 +35,18 @@ namespace Torrent
         public int DownloadCount { get; set; }
         public Peer Peer { get; set; }
     }
+    public delegate void DownloadComplete();
     public partial class TorrentModel
     {
         private readonly DictionaryField _dictionaryField;
         private readonly Guid _guid = Guid.NewGuid();
-
         public Dictionary<int, DownloadState> DownloadState;
-
         public List<Peer> Peers = new List<Peer>();
+        private readonly object _lock = new object();
+        private readonly BlockingCollection<(byte[] buf, int index, int begin, Peer peer)> _writeToFileDB = new BlockingCollection<(byte[], int, int, Peer)>();
+        public readonly BlockingCollection<int> PeiceIndex = new BlockingCollection<int>();
+
+        public event DownloadComplete DownloadComplete;
 
         public void SetPeerNull(Peer peer)
         {
@@ -104,7 +110,23 @@ namespace Torrent
                     }
                 }
             }
+
+            //配置数据写入进程
+            _ = Task.Factory.StartNew(() =>
+            {
+                foreach (var item in _writeToFileDB.GetConsumingEnumerable())
+                {
+                    WriteToFile(item.buf, item.index, item.begin, item.peer);
+                }
+            }, TaskCreationOptions.LongRunning);
+
+            //初始化任务
+            foreach (var item in this.DownloadState)
+            {
+                PeiceIndex.Add(item.Key);
+            }
         }
+
         public Guid Id { get { return _guid; } }
 
         private AnnounceItem _announce;
@@ -185,6 +207,89 @@ namespace Torrent
         {
             return Info.Sha1Hash.Aggregate(13, (s, item) => s + 23 * item);
         }
+
+        public void AddWriteToFile(byte[] buf, int index, int begin, Peer peer)
+        {
+            _writeToFileDB.Add((buf, index, begin, peer));
+        }
+        private void WriteToFile(byte[] buf, int index, int begin, Peer peer)
+        {
+
+            if (Info.Files != null)
+            {
+                //多文件
+                var start = Info.Piece_length * index + begin;
+                var end = start + buf.Length;
+                long sum = 0;
+                long writeLen = 0;
+                foreach (var item in Info.Files)
+                {
+                    if (start >= sum && start < (sum + item.Length))
+                    {
+                        if ((item.Length + sum - start) >= buf.Length)
+                        {
+                            //最后一节
+                            long count = end - start;
+                            WriteFile(start - sum, writeLen, count);
+                            writeLen += count;
+                        }
+                        else
+                        {
+                            long count = (item.Length + sum - start);
+
+                            WriteFile(start - sum, writeLen, count);
+
+                            writeLen += count;
+                            start += count;
+                        }
+                        if (writeLen == buf.Length)
+                        {
+                            break;
+                        }
+                    }
+                    sum += item.Length;
+
+                    void WriteFile(long fileoffset, long bufOffset, long len)
+                    {
+                        var filename = Info.Name + "/" + item.FileName;
+                        using (var fs = new FileStream($"{filename}", FileMode.OpenOrCreate))
+                        {
+                            fs.Position = fileoffset;
+                            fs.Write(buf, (int)bufOffset, (int)len);
+                        }
+                    }
+                }
+            }
+            else
+            {
+                //单文件
+                var filename = this.Info.Name;
+                using (var fs = new FileStream($"{filename}", FileMode.OpenOrCreate))
+                {
+                    fs.Position = index * Info.Piece_length + begin;
+                    fs.Write(buf, 0, buf.Length);
+                }
+            }
+            var ditem = this.DownloadState[index];
+            ditem.DownloadCount += buf.Length;
+            if (ditem.DownloadCount == Info.Piece_length
+            || (Info.Files == null && index == (this.DownloadState.Count - 1) && ditem.DownloadCount == (Info.Length - Info.Piece_length * (this.DownloadState.Count - 1)))
+            || (Info.Files != null && index == (this.DownloadState.Count - 1) && ditem.DownloadCount == (Info.Files.Sum(m => m.Length) - Info.Piece_length * (this.DownloadState.Count - 1)))
+                )
+            {
+                ditem.IsDownloded = true;
+                ditem.Peer = null;
+                peer.SendHave(index);
+            }
+            if (!this.DownloadState.Any(m => m.Value.IsDownloded == false))
+            {
+                Console.WriteLine("下载完毕");
+                _writeToFileDB.CompleteAdding();
+                PeiceIndex.CompleteAdding();
+                DownloadComplete();
+            }
+        }
+
     }
 
     public class Info
