@@ -72,7 +72,7 @@ namespace Torrent
                     {
                         continue;
                     }
-                    Console.WriteLine("请求" + b.Url + "成功：");
+                    Console.WriteLine("请求" + b.Url + "成功：" + m.Peers.Length);
                     ls.Add(m);
                 }
                 catch (Exception e)

@@ -20,6 +20,8 @@ namespace Torrent
         private Dictionary<ConnecttionId_TransactionId, TorrentModel> _dic = new Dictionary<ConnecttionId_TransactionId, TorrentModel>();
         private Dictionary<ReplayItem, int> _connectingLs = new Dictionary<ReplayItem, int>();
 
+        public static int Port { get; set; } = 8099;
+
         public UdpServer(int port)
         {
             _port = port;
@@ -91,7 +93,7 @@ namespace Torrent
                 {
                     var transaction_id = IPAddress.NetworkToHostOrder(br.ReadInt32());
                     var connection_id = IPAddress.NetworkToHostOrder(br.ReadInt64());
-                    //Console.WriteLine($"收到字节长度：{receiveLen}，i32:{transaction_id},i64:{connection_id}");
+                    Console.WriteLine($"收到字节长度：{receiveLen}，i32:{transaction_id},i64:{connection_id}");
 
                     var ids = ConnecttionId_TransactionId.Create(transaction_id, connection_id);
                     if (_dic.ContainsKey(ids))
