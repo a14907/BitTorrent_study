@@ -226,32 +226,82 @@ namespace Torrent
                             void Piece()
                             {
                                 //piece: <len=0009+X><id=7><index><begin><block>
-                                Console.WriteLine(ip + ",处理：Piece");
                                 var buf = new byte[4];
                                 soc.ReceiveEnsure(buf, 4, SocketFlags.None, $"{ip}, Piece ");
                                 var index = IPAddress.NetworkToHostOrder(BitConverter.ToInt32(buf, 0));
                                 soc.ReceiveEnsure(buf, 4, SocketFlags.None, $"{ip}, Piece ");
                                 var begin = IPAddress.NetworkToHostOrder(BitConverter.ToInt32(buf, 0));
 
+                                Console.WriteLine(ip + ",处理：Piece" + index);
                                 buf = new byte[messageLen - 9];
                                 soc.ReceiveEnsure(buf, buf.Length, SocketFlags.None, $"{ip}, Piece ");
 
                                 lock (_lock)
                                 {
-                                    var filename = torrentModel.Info.Name;
-                                    using (var fs = new FileStream($"{filename}", FileMode.OpenOrCreate))
+                                    if (info.Files != null)
                                     {
-                                        fs.Position = index * info.Piece_length + begin;
-                                        fs.Write(buf, 0, buf.Length);
+                                        //多文件
+                                        var start = info.Piece_length * index + begin;
+                                        var end = start + buf.Length;
+                                        long sum = 0;
+                                        long writeLen = 0;
+                                        foreach (var item in info.Files)
+                                        {
+                                            if (start >= sum && start < (sum + item.Length))
+                                            {
+                                                if ((item.Length + sum - start) >= buf.Length)
+                                                {
+                                                    //最后一节
+                                                    long count = end - start;
+                                                    WriteFile(start - sum, writeLen, count);
+                                                    writeLen += count;
+                                                }
+                                                else
+                                                {
+                                                    long count = (item.Length + sum - start);
+
+                                                    WriteFile(start - sum, writeLen, count);
+
+                                                    writeLen += count;
+                                                    start += count;
+                                                }
+                                                if (writeLen == buf.Length)
+                                                {
+                                                    break;
+                                                }
+                                            }
+                                            sum += item.Length;
+
+                                            void WriteFile(long fileoffset, long bufOffset, long len)
+                                            {
+                                                var filename = info.Name + "/" + item.FileName;
+                                                using (var fs = new FileStream($"{filename}", FileMode.OpenOrCreate))
+                                                {
+                                                    fs.Position = fileoffset;
+                                                    fs.Write(buf, (int)bufOffset, (int)len);
+                                                }
+                                            }
+                                        }
                                     }
-                                    var item = torrentModel.DownloadState[index];
-                                    item.DownloadCount += buf.Length;
-                                    if (item.DownloadCount == info.Piece_length
-                                    || (index == (torrentModel.DownloadState.Count - 1)
-                                        && item.DownloadCount == (info.Length - info.Piece_length * (torrentModel.DownloadState.Count - 1))))
+                                    else
                                     {
-                                        item.IsDownloded = true;
-                                        item.Peer = null;
+                                        //单文件
+                                        var filename = torrentModel.Info.Name;
+                                        using (var fs = new FileStream($"{filename}", FileMode.OpenOrCreate))
+                                        {
+                                            fs.Position = index * info.Piece_length + begin;
+                                            fs.Write(buf, 0, buf.Length);
+                                        }
+                                    }
+                                    var ditem = torrentModel.DownloadState[index];
+                                    ditem.DownloadCount += buf.Length;
+                                    if (ditem.DownloadCount == info.Piece_length
+                                    || (info.Files == null && index == (torrentModel.DownloadState.Count - 1) && ditem.DownloadCount == (info.Length - info.Piece_length * (torrentModel.DownloadState.Count - 1)))
+                                    || (info.Files != null && index == (torrentModel.DownloadState.Count - 1) && ditem.DownloadCount == (info.Files.Sum(m => m.Length) - info.Piece_length * (torrentModel.DownloadState.Count - 1)))
+                                        )
+                                    {
+                                        ditem.IsDownloded = true;
+                                        ditem.Peer = null;
                                         SendHave(index);
                                     }
                                     if (!torrentModel.DownloadState.Any(m => m.Value.IsDownloded == false))
@@ -504,7 +554,14 @@ namespace Torrent
                 int total = (int)info.Piece_length;
                 if (requestIndex == TorrentModel.DownloadState.Count - 1)
                 {
-                    total = (int)(info.Length - (info.Piece_length * (TorrentModel.DownloadState.Count - 1)));
+                    if (info.Files == null)
+                    {
+                        total = (int)(info.Length - (info.Piece_length * (TorrentModel.DownloadState.Count - 1)));
+                    }
+                    else
+                    {
+                        total = (int)(info.Files.Sum(m => m.Length) - (info.Piece_length * (TorrentModel.DownloadState.Count - 1)));
+                    }
                 }
                 var time = (int)Math.Ceiling(total * 1.0 / oneceLen);
                 int begin = 0;

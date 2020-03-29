@@ -1,6 +1,7 @@
 ﻿using Bencoding.Model;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using Tracker.Models;
 
@@ -78,6 +79,30 @@ namespace Torrent
             for (int i = 0; i < Info.PiecesHashArray.Count; i++)
             {
                 DownloadState[i] = new DownloadState(false);
+            }
+
+            //如果是多文件，预先创建文件夹
+            if (Info.Files != null)
+            {
+                if (!Directory.Exists(Info.Name))
+                {
+                    Directory.CreateDirectory(Info.Name);
+                }
+                foreach (var f in Info.Files)
+                {
+                    if (f.Path.Count > 1)
+                    {
+                        var p = Info.Name;
+                        for (int i = 0; i < f.Path.Count - 1; i++)
+                        {
+                            p += "/" + f.Path[i];
+                            if (!Directory.Exists(p))
+                            {
+                                Directory.CreateDirectory(p);
+                            }
+                        }
+                    }
+                }
             }
         }
         public Guid Id { get { return _guid; } }
@@ -237,5 +262,12 @@ namespace Torrent
             }
         }
 
+        public string FileName
+        {
+            get
+            {
+                return string.Join("/", Path);
+            }
+        }
     }
 }

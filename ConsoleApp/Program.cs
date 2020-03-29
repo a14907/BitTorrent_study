@@ -14,11 +14,10 @@ namespace ConsoleApp
         {
 
 
-
             //var server = new UdpServer(Http.Port);
             var tcp = new Tcp();
             //server.Start();
-            using (var fs = new FileStream("b.torrent", FileMode.Open))
+            using (var fs = new FileStream("a.torrent", FileMode.Open))
             {
                 var data = Parser.Decode(fs);
                 TorrentModel torrentModel = new TorrentModel(data as DictionaryField);
