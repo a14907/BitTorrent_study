@@ -21,6 +21,7 @@ namespace Torrent
         private Dictionary<ReplayItem, int> _connectingLs = new Dictionary<ReplayItem, int>();
 
         public static int Port { get; set; } = 8099;
+        public static bool IsOk { get; set; }
 
         public UdpServer(int port)
         {
@@ -139,6 +140,7 @@ namespace Torrent
                             Complete = seeders,
                             Incomplete = leechers
                         });
+                        IsOk = true;
                         _dic.Remove(ids);
                     }
                 }

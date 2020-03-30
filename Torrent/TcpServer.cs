@@ -27,8 +27,8 @@ namespace Torrent
 
             ////测试，调试
             //data = new List<IPEndPoint> {
-            //    //new IPEndPoint(IPAddress.Parse("192.168.1.102"), 29512),
-            //    new IPEndPoint(IPAddress.Parse("192.168.1.102"), 18123)
+            //    new IPEndPoint(IPAddress.Parse("192.168.1.102"), 29512),
+            //    //new IPEndPoint(IPAddress.Parse("192.168.1.102"), 18123)
             //};
 
             if (data.Count == 0)
@@ -231,7 +231,7 @@ namespace Torrent
                                             soc.ReceiveEnsure(buf, 4, SocketFlags.None, $"{ip}, Piece ");
                                             var begin = IPAddress.NetworkToHostOrder(BitConverter.ToInt32(buf, 0));
 
-                                            Console.WriteLine(ip + ",处理：Piece" + index);
+                                            Console.WriteLine(ip + ",处理：Piece-" + index + " 接收到的数据长度-" + (messageLen - 9));
                                             buf = new byte[messageLen - 9];
                                             if (buf.Length == 0)
                                             {
@@ -272,28 +272,15 @@ namespace Torrent
                                                     await Task.Delay(3000);
                                                 }
 
-                                                foreach (var i in TorrentModel.PeiceIndex.GetConsumingEnumerable())
+                                                foreach (var i in GetIndex())
                                                 {
                                                     if (!IsConnect)
                                                     {
                                                         break;
                                                     }
-                                                    await Task.Delay(200);
+                                                    //await Task.Delay(200);
                                                     Console.WriteLine(ip + " :===========判断序号是否存在：" + i);
                                                     var item = TorrentModel.DownloadState[i];
-                                                    if (!PeerHaveState[i])
-                                                    {
-                                                        //当前peer没有这块内容，把index返还
-                                                        Console.WriteLine(ip + " :===========当前peer存在序号：" + i + " 返还");
-                                                        while (true)
-                                                        {
-                                                            if (TorrentModel.PeiceIndex.TryAdd(i))
-                                                            {
-                                                                break;
-                                                            }
-                                                        }
-                                                        continue;
-                                                    }
                                                     Console.WriteLine(ip + " :===========当前peer存在序号：" + i);
                                                     if (!item.IsDownloded)
                                                     {
@@ -440,6 +427,18 @@ namespace Torrent
 
         }
 
+        private IEnumerable<int> GetIndex()
+        {
+            var h = PeerHaveState.Where(m => m.Value).Select(m => m.Key).ToList();
+            while (true)
+            {
+                foreach (var item in _haveIndexArray.Union(h))
+                {
+                    yield return item;
+                }
+            }
+        }
+
         private void TorrentModelIns_DownloadComplete()
         {
             this._socket?.Disconnect(true);
@@ -552,7 +551,6 @@ namespace Torrent
                     Console.WriteLine($"{ip}, 发送request, 序号：" + requestIndex + " begin:" + begin + " length:" + length);
 
                     _socket.SendEnsure(buf.ToArray(), buf.Count, SocketFlags.None, $"{ip}, 发送request, 序号：" + requestIndex);
-                    Thread.Sleep(200);
                 }
             }
         }

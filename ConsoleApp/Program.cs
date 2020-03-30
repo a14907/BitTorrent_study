@@ -3,6 +3,7 @@ using Bencoding.Model;
 using System;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Threading.Tasks;
 using Torrent;
 
@@ -12,7 +13,7 @@ namespace ConsoleApp
     {
         static async Task Main(string[] args)
         {
-            //var server = new UdpServer(Http.Port);
+            //var server = new UdpServer(UdpServer.Port);
             var tcp = new Tcp();
             //server.Start();
             using (var fs = new FileStream("b.torrent", FileMode.Open))
@@ -23,7 +24,13 @@ namespace ConsoleApp
                 var res = await torrentModel.TrackAsync();
 
                 //var res2 = await torrentModel.ScrapeAsync();
+
                 //server.Connecting(torrentModel);
+                //while (!UdpServer.IsOk)
+                //{
+                //    await Task.Delay(1000);
+                //}
+                //Console.WriteLine("收到udp");
                 tcp.Download(torrentModel);
                 Console.ReadKey();
             }
