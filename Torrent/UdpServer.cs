@@ -27,7 +27,7 @@ namespace Torrent
         {
             _port = port;
             _socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
-            _timer = new Timer(RepeatConnectingUDP, null, 15000, Timeout.Infinite);
+            //_timer = new Timer(RepeatConnectingUDP, null, 15000, Timeout.Infinite);
         }
 
         private void RepeatConnectingUDP(object state)
@@ -133,13 +133,14 @@ namespace Torrent
                     if (_dic.ContainsKey(ids))
                     {
                         var model = _dic[ids];
-                        model.TrackerResponse.Add(new TrackerResponse(remoteEP as IPEndPoint)
+                        var tr = new TrackerResponse(remoteEP as IPEndPoint)
                         {
                             Peers = ls.ToArray(),
                             Interval = interval,
                             Complete = seeders,
                             Incomplete = leechers
-                        });
+                        };
+                        model.Download(tr);
                         IsOk = true;
                         _dic.Remove(ids);
                     }

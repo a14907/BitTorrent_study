@@ -30,7 +30,7 @@ namespace Torrent
             }
             PeerIdBytes = data.ToArray();
         }
-        public static async Task<List<TrackerResponse>> TrackAsync(this TorrentModel model)
+        public static async Task TrackAsync(this TorrentModel model)
         {
             var info_hash = Encoding.UTF8.GetString(WebUtility.UrlEncodeToBytes(model.Info.Sha1Hash, 0, 20));
             var peer_id = Encoding.UTF8.GetString(WebUtility.UrlEncodeToBytes(PeerIdBytes, 0, 20));
@@ -53,9 +53,9 @@ namespace Torrent
                 throw new Exception("不存在http或者https的announce");
             }
 
+            Console.WriteLine("http track数量：" + httpUrls.Count);
             //udp tracker:https://blog.csdn.net/wenxinfly/article/details/1504785
 
-            var ls = new List<TrackerResponse>();
             foreach (var b in httpUrls)
             {
                 try
@@ -77,15 +77,13 @@ namespace Torrent
                         continue;
                     }
                     Console.WriteLine("请求" + b.Url + "成功：" + m.Peers.Length);
-                    ls.Add(m);
+                    model.Download(m);
                 }
                 catch (Exception e)
                 {
-                    //Console.WriteLine("请求" + b.Url + "发生错误：" + e.Message);
+                    Console.WriteLine("请求" + b.Url + "发生错误：" + e.Message);
                 }
             }
-            model.TrackerResponse.AddRange(ls);
-            return ls;
         }
 
         public static async Task<object> ScrapeAsync(this TorrentModel model)

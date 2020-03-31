@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
+using System.Threading;
 using System.Threading.Tasks;
 using Tracker.Models;
 
@@ -41,13 +42,24 @@ namespace Torrent
     {
         private readonly DictionaryField _dictionaryField;
         private readonly SHA1 _sha1 = SHA1.Create();
+
+        public void Download(TrackerResponse trackerResponse)
+        {
+            _ = Task.Factory.StartNew(() =>
+            {
+                new Tcp().Download(this, trackerResponse);
+            }, TaskCreationOptions.LongRunning);
+        }
+
         private readonly Guid _guid = Guid.NewGuid();
         public Dictionary<int, DownloadState> DownloadState;
         public List<Peer> Peers = new List<Peer>();
+        public bool IsFinish { get; set; }
         private readonly object _lock = new object();
         private readonly BlockingCollection<(byte[] buf, int index, int begin, Peer peer)> _writeToFileDB = new BlockingCollection<(byte[], int, int, Peer)>();
 
         public event DownloadComplete DownloadComplete;
+        private UdpServer _udpServer = new UdpServer(UdpServer.Port);
 
         public void SetPeerNull(Peer peer)
         {
@@ -121,6 +133,7 @@ namespace Torrent
                 }
             }, TaskCreationOptions.LongRunning);
 
+            _udpServer.Start();
         }
 
         public Guid Id { get { return _guid; } }
@@ -183,7 +196,6 @@ namespace Torrent
             }
         }
         public Info Info { get; set; }
-        public List<TrackerResponse> TrackerResponse { get; } = new List<TrackerResponse>();
 
         public override bool Equals(object obj)
         {
@@ -207,6 +219,21 @@ namespace Torrent
         public void AddWriteToFile(byte[] buf, int index, int begin, Peer peer)
         {
             _writeToFileDB.Add((buf, index, begin, peer));
+        }
+
+        private SemaphoreSlim _semaphoreSlim = new SemaphoreSlim(0);
+        private ManualResetEventSlim _manualResetEventSlim = new ManualResetEventSlim(false);
+        public void AddStart()
+        {
+            _semaphoreSlim.Release();
+        }
+        public void AddFinish()
+        {
+            _semaphoreSlim.Wait();
+            if (_semaphoreSlim.CurrentCount == 0)
+            {
+                _manualResetEventSlim.Set();
+            }
         }
         private void WriteToFile(byte[] buf, int index, int begin, Peer peer)
         {
@@ -284,8 +311,10 @@ namespace Torrent
             if (!this.DownloadState.Any(m => m.Value.IsDownloded == false))
             {
                 Console.WriteLine("下载完毕");
+                IsFinish = true;
                 _writeToFileDB.CompleteAdding();
                 DownloadComplete();
+                _manualResetEventSlim.Set();
             }
         }
 
@@ -355,6 +384,19 @@ namespace Torrent
                 }
             }
             return null;
+        }
+
+        public void Connecting()
+        {
+            Task.Factory.StartNew(() =>
+            {
+                _udpServer.Connecting(this);
+            }, TaskCreationOptions.LongRunning);
+        }
+
+        public void WaitFinish()
+        {
+            _manualResetEventSlim.Wait();
         }
     }
 
