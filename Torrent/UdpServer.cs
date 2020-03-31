@@ -199,7 +199,7 @@ namespace Torrent
             long uploaded = 0;
             int eventVal = (int)EventType.Started;
             int ip = 0;
-            //	A unique key that is randomized by the client
+            //  A unique key that is randomized by the client
             int key = new Random().Next(0, 999999);
             int num_want = 30;
             UInt16 port = (UInt16)Http.Port;
@@ -232,7 +232,11 @@ namespace Torrent
         {
             var ls = new List<AnnounceItem>();
             ls.AddRange(model.Announce_list.SelectMany(m => m));
-            ls.Add(model.Announce);
+            if (!string.IsNullOrEmpty(model.Announce.Url))
+            {
+                ls.Add(model.Announce);
+            }
+
 
             var us = ls.Where(m => m.Url.StartsWith("udp"));
             Console.WriteLine("udp announce数量：" + us.Count());

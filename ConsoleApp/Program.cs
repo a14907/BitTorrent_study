@@ -13,9 +13,9 @@ namespace ConsoleApp
     {
         static async Task Main(string[] args)
         {
-            //var server = new UdpServer(UdpServer.Port);
+            var server = new UdpServer(UdpServer.Port);
             var tcp = new Tcp();
-            //server.Start();
+            server.Start();
             using (var fs = new FileStream("b.torrent", FileMode.Open))
             {
                 var data = Parser.Decode(fs);
@@ -25,17 +25,17 @@ namespace ConsoleApp
 
                 //var res2 = await torrentModel.ScrapeAsync();
 
-                //server.Connecting(torrentModel);
-                //while (!UdpServer.IsOk)
-                //{
-                //    await Task.Delay(1000);
-                //}
-                //Console.WriteLine("收到udp");
+                server.Connecting(torrentModel);
+                while (!UdpServer.IsOk)
+                {
+                    await Task.Delay(1000);
+                }
+                Console.WriteLine("收到udp");
                 tcp.Download(torrentModel);
                 Console.ReadKey();
             }
             Console.WriteLine("OK");
-            //server.Stop();
+            server.Stop();
         }
     }
 }

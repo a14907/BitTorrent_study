@@ -42,7 +42,11 @@ namespace Torrent
             var compact = 1;
 
             var us = model.Announce_list.SelectMany(m => m).ToList();
-            us.Add(model.Announce);
+            if (!string.IsNullOrEmpty(model.Announce.Url))
+            {
+                us.Add(model.Announce);
+            }
+
             var httpUrls = us.Where(m => m.Url.StartsWith("http")).ToList();
             if (!httpUrls.Any())
             {
