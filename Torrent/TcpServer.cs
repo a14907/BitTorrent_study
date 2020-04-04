@@ -23,13 +23,13 @@ namespace Torrent
         public void Download(TorrentModel torrentModel, TrackerResponse trackerResponse)
         {
             var localIp = IPAddress.Parse("127.0.0.1");
-            var data = trackerResponse.Peers.Where(m => !m.Address.Equals(localIp)).Distinct(new IPEndPointCompare()).OrderBy(m => Guid.NewGuid()).ToList();
+            //var data = trackerResponse.Peers.Where(m => !m.Address.Equals(localIp)).Distinct(new IPEndPointCompare()).OrderBy(m => Guid.NewGuid()).ToList();
 
-            ////测试，调试
-            //data = new List<IPEndPoint> {
-            //    new IPEndPoint(IPAddress.Parse("192.168.1.102"), 29512),
-            //    //new IPEndPoint(IPAddress.Parse("192.168.1.102"), 18123)
-            //};
+            //测试，调试
+            var data = new List<IPEndPoint> {
+                new IPEndPoint(IPAddress.Parse("192.168.1.102"), 29512),
+                //new IPEndPoint(IPAddress.Parse("192.168.1.102"), 18123)
+            };
 
             if (data.Count == 0)
             {
@@ -74,6 +74,7 @@ namespace Torrent
         {
             _lock = lockObj;
             _tcp = tcp;
+            _getIndexEnumerator = GetIndex().GetEnumerator();
         }
 
         private static readonly byte[] _reserved = new byte[] { 0, 0, 0, 0, 0, 0, 0, 0 };
@@ -89,6 +90,7 @@ namespace Torrent
         private readonly List<int> _haveIndexArray = new List<int>();
         private readonly object _lock;
         private readonly Tcp _tcp;
+        private readonly IEnumerator<int> _getIndexEnumerator;
         public Dictionary<int, bool> PeerHaveState = new Dictionary<int, bool>();
         private Socket _socket;
         public IPEndPoint ip;
@@ -249,6 +251,8 @@ namespace Torrent
                                             soc.ReceiveEnsure(buf, buf.Length, SocketFlags.None, $"{ip}, Piece ");
 
                                             TorrentModel.AddWriteToFile(buf, index, begin, this);
+                                            //请求下一段
+                                            SendRequest(index, begin + buf.Length);
                                         }
 
                                         void Request()
@@ -281,37 +285,8 @@ namespace Torrent
                                                     await Task.Delay(3000);
                                                 }
 
-                                                foreach (var i in GetIndex())
-                                                {
-
-                                                    if (TorrentModel.IsFinish)
-                                                    {
-                                                        return;
-                                                    }
-                                                    if (!IsConnect)
-                                                    {
-                                                        break;
-                                                    }
-                                                    await Task.Delay(200);
-                                                    Console.WriteLine(ip + " :===========判断序号是否存在：" + i);
-                                                    var item = TorrentModel.DownloadState[i];
-                                                    Console.WriteLine(ip + " :===========当前peer存在序号：" + i);
-                                                    if (!item.IsDownloded)
-                                                    {
-                                                        if (IsConnect && PeerHaveState.ContainsKey(i) && _am_interested)
-                                                        {
-                                                            var p = this;
-                                                            Console.WriteLine(ip + " :======" + p.ip + "======请求" + i + "开始");
-                                                            //torrentModel.DownloadSemaphore.Wait();
-                                                            p.SendRequest(i);
-                                                            item.Peer = this;
-                                                            Console.WriteLine(ip + " :======" + p.ip + "======请求" + i + "完毕");
-                                                        }
-                                                    }
-                                                }
-
-
-                                            }, TaskCreationOptions.LongRunning);
+                                                RequestNextPeice();
+                                            });
                                         }
 
                                         void Have()
@@ -434,6 +409,37 @@ namespace Torrent
                 return;
             }
 
+        }
+
+        private void RequestNextPeice()
+        {
+            if (!_getIndexEnumerator.MoveNext())
+            {
+                return;
+            }
+            var i = _getIndexEnumerator.Current;
+            if (TorrentModel.IsFinish)
+            {
+                return;
+            }
+            if (!IsConnect)
+            {
+                return;
+            }
+            Console.WriteLine(ip + " :===========判断序号是否存在：" + i);
+            var item = TorrentModel.DownloadState[i];
+            Console.WriteLine(ip + " :===========当前peer存在序号：" + i);
+            if (!item.IsDownloded)
+            {
+                if (IsConnect && PeerHaveState.ContainsKey(i) && _am_interested)
+                {
+                    var p = this;
+                    Console.WriteLine(ip + " :======" + p.ip + "======请求" + i + "开始");
+                    p.SendRequest(i, 0);
+                    item.Peer = this;
+                    Console.WriteLine(ip + " :======" + p.ip + "======请求" + i + "完毕");
+                }
+            }
         }
 
         private IEnumerable<int> GetIndex()
@@ -564,6 +570,67 @@ namespace Torrent
                     _socket.SendEnsure(buf.ToArray(), buf.Count, SocketFlags.None, $"{ip}, 发送request, 序号：" + requestIndex);
                     Thread.Sleep(200);
                 }
+            }
+        }
+
+        public void SendRequest(int requestIndex, int begin)
+        {
+            lock (_lock)
+            {
+                //request: < len = 0013 >< id = 6 >< index >< begin >< length > 
+                //request报文长度固定，用于请求一个块(block)。payload包含如下信息： 
+                //index: 整数，指定从零开始的piece索引。 
+                //begin: 整数，指定piece中从零开始的字节偏移。 
+                //length: 整数，指定请求的长度。
+
+                //16kb
+                var oneceLen = 16384;
+                int total = (int)_info.Piece_length;
+                if (requestIndex == TorrentModel.DownloadState.Count - 1)
+                {
+                    if (_info.Files == null)
+                    {
+                        total = (int)(_info.Length - (_info.Piece_length * (TorrentModel.DownloadState.Count - 1)));
+                    }
+                    else
+                    {
+                        total = (int)(_info.Files.Sum(m => m.Length) - (_info.Piece_length * (TorrentModel.DownloadState.Count - 1)));
+                    }
+                    if (total == begin)
+                    {
+                        //不是顺序下载，可能出现最后一块先下载完毕，这个时候考虑下载下一块
+                        RequestNextPeice();
+                        return;
+                    }
+                }
+                else if (begin == _info.Piece_length)
+                {
+                    RequestNextPeice();
+                    return;
+                }
+
+                Console.WriteLine(ip + ",发送：Request 请求序号：" + requestIndex);
+
+                var time = (int)Math.Ceiling(total * 1.0 / oneceLen);
+                //int begin = 0;
+                int length = 0;
+                //for (int i = 0; i < time; i++)
+                //{
+                //begin = oneceLen * i;
+                length = (int)Math.Min(oneceLen, total - begin);
+
+                var buf = new List<byte>(17);
+                buf.AddRange(BitConverter.GetBytes(IPAddress.NetworkToHostOrder(13)));
+                buf.Add(6);
+                buf.AddRange(BitConverter.GetBytes(IPAddress.NetworkToHostOrder(requestIndex)));
+                buf.AddRange(BitConverter.GetBytes(IPAddress.NetworkToHostOrder(begin)));
+                buf.AddRange(BitConverter.GetBytes(IPAddress.NetworkToHostOrder(length)));
+
+                Console.WriteLine($"{ip}, 发送request, 序号：" + requestIndex + " begin:" + begin + " length:" + length);
+
+                _socket.SendEnsure(buf.ToArray(), buf.Count, SocketFlags.None, $"{ip}, 发送request, 序号：" + requestIndex);
+
+                //}
             }
         }
 

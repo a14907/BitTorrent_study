@@ -10,6 +10,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Update="a.torrent">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
     <None Update="b.torrent">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>

@@ -7,6 +7,8 @@ using System.Security.Cryptography;
 using System.Threading.Tasks;
 using System.Threading;
 using Torrent;
+using System.Collections.Generic;
+using System.Net;
 
 namespace ConsoleApp
 {
@@ -14,7 +16,7 @@ namespace ConsoleApp
     {
         static async Task Main(string[] args)
         {
-            using (var fs = new FileStream("b.torrent", FileMode.Open))
+            using (var fs = new FileStream("a.torrent", FileMode.Open))
             {
                 var data = Parser.Decode(fs);
                 TorrentModel torrentModel = new TorrentModel(data as DictionaryField);
@@ -25,6 +27,8 @@ namespace ConsoleApp
                 //var res2 = await torrentModel.ScrapeAsync();
 
                 torrentModel.Connecting();
+
+                torrentModel.Download(new Tracker.Models.TrackerResponse(IPEndPoint.Parse("192.168.1.102:29512")));
 
                 torrentModel.WaitFinish();
             }
