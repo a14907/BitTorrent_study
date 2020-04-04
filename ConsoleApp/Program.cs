@@ -18,6 +18,7 @@ namespace ConsoleApp
             {
                 var data = Parser.Decode(fs);
                 TorrentModel torrentModel = new TorrentModel(data as DictionaryField);
+                Console.WriteLine("下载：" + torrentModel.Info.Name);
 
                 _ = torrentModel.TrackAsync();
 

@@ -14,9 +14,7 @@ namespace Torrent
 {
     public class Tcp
     {
-        public static int TotalPeer;
-        public static int ErrNum;
-        public static SemaphoreSlim SemaphoreSlim;
+        public SemaphoreSlim SemaphoreSlim;
         //public static FakeSemaphoreSlim SemaphoreSlim = new FakeSemaphoreSlim(10, 10);
         public Tcp()
         {
@@ -41,8 +39,7 @@ namespace Torrent
             int maxRun = Math.Min(10, data.Count);
             SemaphoreSlim = new SemaphoreSlim(maxRun, maxRun);
 
-            TotalPeer = data.Count;
-            Console.WriteLine("ip总数：" + TotalPeer);
+            Console.WriteLine("ip总数：" + data.Count);
             var lockObj = new object();
             torrentModel.AddStart();
             foreach (var item in data)
@@ -52,7 +49,7 @@ namespace Torrent
                     return;
                 }
                 SemaphoreSlim.Wait();
-                var peer = new Peer(lockObj);
+                var peer = new Peer(lockObj, this);
                 peer.Process(item, torrentModel.Info, torrentModel);
                 torrentModel.Peers.Add(peer);
                 if (peer.IsConnect)
@@ -73,9 +70,10 @@ namespace Torrent
 
     public class Peer
     {
-        public Peer(object lockObj)
+        public Peer(object lockObj, Tcp tcp)
         {
             _lock = lockObj;
+            _tcp = tcp;
         }
 
         private static readonly byte[] _reserved = new byte[] { 0, 0, 0, 0, 0, 0, 0, 0 };
@@ -90,6 +88,7 @@ namespace Torrent
         public bool _peer_interested = false;// 远程peer对本客户端感兴趣。
         private readonly List<int> _haveIndexArray = new List<int>();
         private readonly object _lock;
+        private readonly Tcp _tcp;
         public Dictionary<int, bool> PeerHaveState = new Dictionary<int, bool>();
         private Socket _socket;
         public IPEndPoint ip;
@@ -406,16 +405,11 @@ namespace Torrent
                             }
                             catch (Exception ex)
                             {
-                                Tcp.ErrNum++;
                                 IsConnect = false;
                                 Console.WriteLine(ip + "，结束 " + ex.Message);
                                 TorrentModel.Peers.Remove(this);
                                 TorrentModel.SetPeerNull(this);
-                                if (Tcp.ErrNum == Tcp.TotalPeer)
-                                {
-                                    Console.WriteLine("全部结束");
-                                }
-                                Tcp.SemaphoreSlim.Release();
+                                _tcp.SemaphoreSlim.Release();
                             }
 
                         }, _socket, TaskCreationOptions.LongRunning);
@@ -425,7 +419,7 @@ namespace Torrent
                         Console.WriteLine(ip + " , " + ex.Message);
                         IsConnect = false;
                         TorrentModel.Peers.Remove(this);
-                        Tcp.SemaphoreSlim.Release();
+                        _tcp.SemaphoreSlim.Release();
                         return;
                     }
                 }
@@ -436,7 +430,7 @@ namespace Torrent
                 Console.WriteLine(ip + " , " + ex.Message);
                 IsConnect = false;
                 TorrentModel.Peers.Remove(this);
-                Tcp.SemaphoreSlim.Release();
+                _tcp.SemaphoreSlim.Release();
                 return;
             }
 
