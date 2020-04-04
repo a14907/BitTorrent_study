@@ -438,10 +438,12 @@ namespace Torrent
 
         private IEnumerable<int> GetIndex()
         {
-            var h = PeerHaveState.Where(m => m.Value).Select(m => m.Key).ToList();
+            var r = new Random((int)DateTime.Now.Ticks);
+            var h = PeerHaveState.Where(m => m.Value).Select(m => m.Key).OrderBy(m => r.Next()).ToList();
             while (true)
             {
-                foreach (var item in _haveIndexArray.Union(h))
+                var ls = _haveIndexArray.OrderBy(m => r.Next()).Union(h).ToList();
+                foreach (var item in ls)
                 {
                     yield return item;
                 }
