@@ -11,37 +11,13 @@ using Tracker.Models;
 
 namespace Torrent
 {
-    public class AnnounceItem
-    {
-        public AnnounceItem(string url)
-        {
-            Url = url;
-        }
-
-        public string Url { get; set; }
-    }
-
-    public class DownloadState
-    {
-
-        public DownloadState(bool isDownloded)
-        {
-            IsDownloded = isDownloded;
-        }
-        public DownloadState()
-        {
-
-        }
-
-        public bool IsDownloded { get; set; }
-        public int DownloadCount { get; set; }
-        public Peer Peer { get; set; }
-    }
     public delegate void DownloadComplete();
     public partial class TorrentModel
     {
+        private readonly Logger _logger;
         private readonly DictionaryField _dictionaryField;
         private readonly SHA1 _sha1 = SHA1.Create();
+        private readonly string _baseDir = "Download";
 
         public void Download(TrackerResponse trackerResponse)
         {
@@ -92,26 +68,41 @@ namespace Torrent
 
         public TorrentModel(DictionaryField dictionaryField)
         {
+            _logger = new Logger(Logger.LogLevel.Warnning);
             _dictionaryField = dictionaryField;
             Info = new Info(dictionaryField["info"] as DictionaryField);
-            DownloadState = new Dictionary<int, DownloadState>(Info.PiecesHashArray.Count);
-            for (int i = 0; i < Info.PiecesHashArray.Count; i++)
+            _downloadStateFile = _baseDir + "/" + Info.Name + ".downloadState";
+
+            if (File.Exists(_downloadStateFile))
             {
-                DownloadState[i] = new DownloadState(false);
+                var s = LoadDownloadProcess();
+                DownloadState = new Dictionary<int, DownloadState>(Info.PiecesHashArray.Count);
+                for (int i = 0; i < Info.PiecesHashArray.Count; i++)
+                {
+                    DownloadState[i] = new DownloadState(s[i]);
+                }
+            }
+            else
+            {
+                DownloadState = new Dictionary<int, DownloadState>(Info.PiecesHashArray.Count);
+                for (int i = 0; i < Info.PiecesHashArray.Count; i++)
+                {
+                    DownloadState[i] = new DownloadState(false);
+                }
             }
 
             //如果是多文件，预先创建文件夹
             if (Info.Files != null)
             {
-                if (!Directory.Exists(Info.Name))
+                if (!Directory.Exists(_baseDir + "/" + Info.Name))
                 {
-                    Directory.CreateDirectory(Info.Name);
+                    Directory.CreateDirectory(_baseDir + "/" + Info.Name);
                 }
                 foreach (var f in Info.Files)
                 {
                     if (f.Path.Count > 1)
                     {
-                        var p = Info.Name;
+                        var p = _baseDir + "/" + Info.Name;
                         for (int i = 0; i < f.Path.Count - 1; i++)
                         {
                             p += "/" + f.Path[i];
@@ -129,8 +120,16 @@ namespace Torrent
             {
                 foreach (var item in _writeToFileDB.GetConsumingEnumerable())
                 {
-                    WriteToFile(item.buf, item.index, item.begin, item.peer);
+                    try
+                    {
+                        WriteToFile(item.buf, item.index, item.begin, item.peer);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex.Message);
+                    }
                 }
+                _writeToFileDB.Dispose();
             }, TaskCreationOptions.LongRunning);
 
             _udpServer.Start();
@@ -196,6 +195,8 @@ namespace Torrent
             }
         }
         public Info Info { get; set; }
+
+        private readonly string _downloadStateFile;
 
         public override bool Equals(object obj)
         {
@@ -274,7 +275,7 @@ namespace Torrent
 
                     void WriteFile(long fileoffset, long bufOffset, long len)
                     {
-                        var filename = Info.Name + "/" + item.FileName;
+                        var filename = _baseDir + "/" + Info.Name + "/" + item.FileName;
                         using (var fs = new FileStream($"{filename}", FileMode.OpenOrCreate))
                         {
                             fs.Position = fileoffset;
@@ -287,7 +288,7 @@ namespace Torrent
             {
                 //单文件
                 var filename = this.Info.Name;
-                using (var fs = new FileStream($"{filename}", FileMode.OpenOrCreate))
+                using (var fs = new FileStream($"{_baseDir}/{filename}", FileMode.OpenOrCreate))
                 {
                     fs.Position = index * Info.Piece_length + begin;
                     fs.Write(buf, 0, buf.Length);
@@ -300,17 +301,19 @@ namespace Torrent
             || (Info.Files != null && index == (this.DownloadState.Count - 1) && ditem.DownloadCount >= (Info.Files.Sum(m => m.Length) - Info.Piece_length * (this.DownloadState.Count - 1)))
                 )
             {
-                var shares = _sha1.ComputeHash(GetPart(index));
+                var shares = _sha1.ComputeHash(GetPeicePart(index));
                 if (Info.PiecesHashArray[index].SequenceEqual(shares))
                 {
                     ditem.IsDownloded = true;
                     ditem.Peer = null;
                     peer.SendHave(index);
+                    //保存下载进度
+                    SaveDownloadProcess();
                 }
             }
             if (!this.DownloadState.Any(m => m.Value.IsDownloded == false))
             {
-                Console.WriteLine("下载完毕");
+                _logger.LogWarnning("下载完毕");
                 IsFinish = true;
                 _writeToFileDB.CompleteAdding();
                 DownloadComplete();
@@ -318,7 +321,30 @@ namespace Torrent
             }
         }
 
-        private byte[] GetPart(int index)
+        private void SaveDownloadProcess()
+        {
+            using (var fs = new FileStream(_downloadStateFile, FileMode.Create))
+            {
+                var dicdata = DownloadState.ToDictionary(m => m.Key, m => m.Value.IsDownloded);
+                var json = new System.Runtime.Serialization.Json.DataContractJsonSerializer(dicdata.GetType());
+                json.WriteObject(fs, dicdata);
+            }
+        }
+        private Dictionary<int, bool> LoadDownloadProcess()
+        {
+            using (var fs = new FileStream(_downloadStateFile, FileMode.Open))
+            {
+                var json = new System.Runtime.Serialization.Json.DataContractJsonSerializer(typeof(Dictionary<int, bool>));
+                return json.ReadObject(fs) as Dictionary<int, bool>;
+            }
+        }
+
+        /// <summary>
+        /// 获取peice的数据进行sha1计算
+        /// </summary>
+        /// <param name="index"></param>
+        /// <returns></returns>
+        private byte[] GetPeicePart(int index)
         {
             if (Info.Files == null)
             {
@@ -328,7 +354,7 @@ namespace Torrent
                 var buf = new byte[len];
 
                 var filename = this.Info.Name;
-                using (var fs = new FileStream($"{filename}", FileMode.OpenOrCreate))
+                using (var fs = new FileStream($"{_baseDir}/{filename}", FileMode.OpenOrCreate))
                 {
                     fs.Position = start;
                     fs.Read(buf, 0, buf.Length);
@@ -374,7 +400,7 @@ namespace Torrent
 
                     void ReadFile(long fileoffset, long bufoffset, long rlen)
                     {
-                        var filename = Info.Name + "/" + item.FileName;
+                        var filename = _baseDir + "/" + Info.Name + "/" + item.FileName;
                         using (var fs = new FileStream($"{filename}", FileMode.OpenOrCreate))
                         {
                             fs.Position = fileoffset;
@@ -397,90 +423,6 @@ namespace Torrent
         public void WaitFinish()
         {
             _manualResetEventSlim.Wait();
-        }
-    }
-
-    public class Info
-    {
-        private DictionaryField _dictionaryField;
-
-        public Info(DictionaryField dictionaryField)
-        {
-            _dictionaryField = dictionaryField;
-        }
-
-        public byte[] Sha1Hash
-        {
-            get
-            {
-                return _dictionaryField.Sha1Val;
-            }
-        }
-        public long Piece_length { get { return (_dictionaryField["piece length"] as NumberField)?.Value ?? 0; } }
-        public string Pieces { get { return (_dictionaryField["pieces"] as StringField)?.Value; } }
-        public List<byte[]> PiecesHashArray
-        {
-            get
-            {
-                var arr = (_dictionaryField["pieces"] as StringField)?.Buffer;
-                var c = arr.Length / 20;
-                var ls = new List<byte[]>();
-                for (int i = 0; i < c; i++)
-                {
-                    ls.Add(arr.Skip(20 * i).Take(20).ToArray());
-                }
-                return ls;
-            }
-        }
-        public long Private { get { return (_dictionaryField["private"] as NumberField)?.Value ?? 0; } }
-        public string Name { get { return (_dictionaryField["name"] as StringField)?.Value; } }
-
-        #region 单文件
-        public long Length { get { return (_dictionaryField["length"] as NumberField)?.Value ?? 0; } }
-        public string Md5sum { get { return (_dictionaryField["md5sum"] as StringField)?.Value; } }
-        #endregion
-
-        #region 多文件
-        public List<FileInfo> Files
-        {
-            get
-            {
-                var ls = _dictionaryField["files"] as ListField;
-                if (ls == null)
-                {
-                    return null;
-                }
-                return ls.Value.Select(m => new FileInfo(m as DictionaryField)).ToList();
-            }
-        }
-        #endregion
-    }
-
-    public class FileInfo
-    {
-        private DictionaryField _m;
-
-        public FileInfo(DictionaryField m)
-        {
-            this._m = m;
-        }
-
-        public long Length { get { return (_m["length"] as NumberField)?.Value ?? 0; } }
-        public string Md5sum { get { return (_m["md5sum"] as StringField)?.Value; } }
-        public List<string> Path
-        {
-            get
-            {
-                return (_m["path"] as ListField)?.Value.Select(m => (m as StringField)?.Value).ToList();
-            }
-        }
-
-        public string FileName
-        {
-            get
-            {
-                return string.Join("/", Path);
-            }
         }
     }
 }

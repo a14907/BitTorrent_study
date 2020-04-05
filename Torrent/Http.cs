@@ -18,9 +18,11 @@ namespace Torrent
         private static readonly HttpClient _httpClient = new HttpClient() { Timeout = TimeSpan.FromSeconds(1) };
         public static readonly byte[] PeerIdBytes;
         public static readonly int Port = 8089;
+        private static Logger _logger;
 
         static Http()
         {
+            _logger = new Logger(Logger.LogLevel.Warnning);
             var str = "-WQ0001-";
             var data = Encoding.ASCII.GetBytes(str).ToList();
             var r = new Random();
@@ -53,7 +55,7 @@ namespace Torrent
                 throw new Exception("不存在http或者https的announce");
             }
 
-            Console.WriteLine("http track数量：" + httpUrls.Count);
+            _logger.LogInformation("http track数量：" + httpUrls.Count);
             //udp tracker:https://blog.csdn.net/wenxinfly/article/details/1504785
 
             foreach (var b in httpUrls)
@@ -76,12 +78,12 @@ namespace Torrent
                     {
                         continue;
                     }
-                    Console.WriteLine("请求" + b.Url + "成功：" + m.Peers.Length);
+                    _logger.LogInformation("请求" + b.Url + "成功：" + m.Peers.Length);
                     model.Download(m);
                 }
                 catch (Exception e)
                 {
-                    Console.WriteLine("请求" + b.Url + "发生错误：" + e.Message);
+                    _logger.LogInformation("请求" + b.Url + "发生错误：" + e.Message);
                 }
             }
         }
@@ -110,12 +112,12 @@ namespace Torrent
                     var url = $"{baseUrl}?info_hash=" + info_hash;
                     var buf = await _httpClient.GetByteArrayAsync(url);
                     var dic = Parser.DecodingDictionary(new MemoryStream(buf));
-                    Console.WriteLine("对" + announceUrl + "进行scrape查询成功");
+                    _logger.LogInformation("对" + announceUrl + "进行scrape查询成功");
                     ls.Add(dic);
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine("对" + announceUrl + "进行scrape查询失败：" + ex.Message);
+                    _logger.LogInformation("对" + announceUrl + "进行scrape查询失败：" + ex.Message);
                 }
             }
             return ls;

@@ -13,6 +13,7 @@ namespace Torrent
 {
     public class UdpServer
     {
+        private readonly Logger _logger;
         private readonly int _port;
         private readonly Socket _socket;
         private Timer _timer;
@@ -25,6 +26,7 @@ namespace Torrent
 
         public UdpServer(int port)
         {
+            _logger = new Logger(Logger.LogLevel.Warnning);
             _port = port;
             _socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
             //_timer = new Timer(RepeatConnectingUDP, null, 15000, Timeout.Infinite);
@@ -37,7 +39,7 @@ namespace Torrent
                 foreach (var item in _connectingLs)
                 {
                     _socket.SendTo(item.Key.Ids.ToArray(), item.Key.EndPoint);
-                    Console.WriteLine("请求connecting:" + item.Key.Ids.Transaction_ID);
+                    _logger.LogInformation("请求connecting:" + item.Key.Ids.Transaction_ID);
                 }
                 foreach (var item in _connectingLs.Keys.ToArray())
                 {
@@ -64,15 +66,22 @@ namespace Torrent
                 var socket = obj as Socket;
                 while (_isStart)
                 {
-                    var buf = new byte[1024 * 8];
-                    EndPoint remoteEP = new IPEndPoint(IPAddress.Any, 0);
-                    var receiveLen = socket.ReceiveFrom(buf, ref remoteEP);
-                    Task.Factory.StartNew(p =>
+                    try
                     {
-                        var state = p as ReceiveState;
-                        HandleTrack(buf, receiveLen, remoteEP);
+                        var buf = new byte[1024 * 8];
+                        EndPoint remoteEP = new IPEndPoint(IPAddress.Any, 0);
+                        var receiveLen = socket.ReceiveFrom(buf, ref remoteEP);
+                        Task.Factory.StartNew(p =>
+                        {
+                            var state = p as ReceiveState;
+                            HandleTrack(buf, receiveLen, remoteEP);
 
-                    }, new ReceiveState { Buffer = buf, ReceiveLen = receiveLen, RemoteEndPoint = remoteEP });
+                        }, new ReceiveState { Buffer = buf, ReceiveLen = receiveLen, RemoteEndPoint = remoteEP });
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogInformation(ex.Message);
+                    }
                 }
             }, _socket, TaskCreationOptions.LongRunning);
         }
@@ -94,13 +103,13 @@ namespace Torrent
                 {
                     var transaction_id = IPAddress.NetworkToHostOrder(br.ReadInt32());
                     var connection_id = IPAddress.NetworkToHostOrder(br.ReadInt64());
-                    Console.WriteLine($"收到字节长度：{receiveLen}，i32:{transaction_id},i64:{connection_id}");
+                    _logger.LogInformation($"收到字节长度：{receiveLen}，i32:{transaction_id},i64:{connection_id}");
 
                     var ids = ConnecttionId_TransactionId.Create(transaction_id, connection_id);
                     if (_dic.ContainsKey(ids))
                     {
                         var model = _dic[ids];
-                        //Console.WriteLine(model.Info.Name ?? model.Info.Files.FirstOrDefault()?.Path.FirstOrDefault());
+                        //_logger.LogInformation(model.Info.Name ?? model.Info.Files.FirstOrDefault()?.Path.FirstOrDefault());
 
                         Announcing(model, connection_id, transaction_id, remoteEP);
                         //Scraping(model, connection_id, transaction_id, remoteEP);
@@ -108,7 +117,7 @@ namespace Torrent
                     var rk = new ReplayItem() { EndPoint = remoteEP, Ids = ids };
                     if (_connectingLs.ContainsKey(rk))
                     {
-                        //Console.WriteLine("已获取udp返回的值，从循环数据源删除相关数据");
+                        //_logger.LogInformation("已获取udp返回的值，从循环数据源删除相关数据");
                         _connectingLs.Remove(rk);
                     }
                     _connectingLs.Remove(new ReplayItem { Ids = ids, EndPoint = remoteEP });
@@ -128,7 +137,7 @@ namespace Torrent
                         var ipendpoint = new IPEndPoint(new IPAddress(ip), port);
                         ls.Add(ipendpoint);
                     }
-                    Console.WriteLine("收到响应 transaction_id:" + transaction_id + ",ip-" + ls.Aggregate("", (s, i) => s + i + ";"));
+                    _logger.LogInformation("收到响应 transaction_id:" + transaction_id + ",ip-" + ls.Aggregate("", (s, i) => s + i + ";"));
                     var ids = ConnecttionId_TransactionId.Create(transaction_id);
                     if (_dic.ContainsKey(ids))
                     {
@@ -159,12 +168,19 @@ namespace Torrent
                 else if (action == ActionsType.Error)
                 {
                     br.ReadInt32();
-                    var errMsg = br.ReadString();
-                    Console.WriteLine("errmsg:" + errMsg);
+                    var i1 = br.BaseStream.Length;
+                    var i2 = br.BaseStream.Position;
+                    bool ishavestr = i1 != i2;
+                    if (ishavestr)
+                    {
+                        var strbuf = br.ReadBytes((int)(i1 - i2));
+                        var errMsg = Encoding.UTF8.GetString(strbuf);
+                        _logger.LogWarnning($"{remoteEP}：udp errmsg:" + errMsg);
+                    }
                 }
                 else
                 {
-                    Console.WriteLine("收到某些响应。。。");
+                    _logger.LogInformation("收到某些响应。。。");
                 }
             }
         }
@@ -202,7 +218,7 @@ namespace Torrent
             int ip = 0;
             //  A unique key that is randomized by the client
             int key = new Random().Next(0, 999999);
-            int num_want = 30;
+            int num_want = -1;
             UInt16 port = (UInt16)Http.Port;
             UInt16 extensions = 0;
 
@@ -240,7 +256,7 @@ namespace Torrent
 
 
             var us = ls.Where(m => m.Url.StartsWith("udp"));
-            Console.WriteLine("udp announce数量：" + us.Count());
+            _logger.LogInformation("udp announce数量：" + us.Count());
             foreach (var item in us)
             {
                 var u = new Uri(item.Url);
@@ -251,7 +267,7 @@ namespace Torrent
                 }
                 IPEndPoint iPEndPoint = new IPEndPoint(ip, u.Port);
                 var ids = ConnecttionId_TransactionId.CreateNext();
-                //Console.WriteLine($"对{item.Url}发送请求,Ids:{ids}");
+                _logger.LogInformation($"对{item.Url}发送请求,Ids:{ids}");
                 _socket.SendTo(ids.ToArray(), iPEndPoint);
 
 
@@ -275,20 +291,20 @@ namespace Torrent
                     var r = rs.FirstOrDefault(m => m.AddressFamily == AddressFamily.InterNetwork);
                     if (r == null)
                     {
-                        Console.WriteLine("host地址无法进行dns解析");
+                        _logger.LogInformation("host地址无法进行dns解析");
                         return null;
                     }
                     return r;
                 }
                 else
                 {
-                    Console.WriteLine("host地址未知");
+                    _logger.LogInformation("host地址未知");
                     return null;
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine(ex.Message + ":" + u);
+                _logger.LogInformation(ex.Message + ":" + u);
                 return null;
             }
         }

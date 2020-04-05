@@ -15,31 +15,41 @@ namespace Torrent
     public class Tcp
     {
         public SemaphoreSlim SemaphoreSlim;
+        private Logger _logger;
+
         //public static FakeSemaphoreSlim SemaphoreSlim = new FakeSemaphoreSlim(10, 10);
         public Tcp()
         {
+            _logger = new Logger(Logger.LogLevel.Warnning);
         }
+
+        public int Total { get; set; }
+        public IPEndPoint Track { get; private set; }
 
         public void Download(TorrentModel torrentModel, TrackerResponse trackerResponse)
         {
             var localIp = IPAddress.Parse("127.0.0.1");
-            //var data = trackerResponse.Peers.Where(m => !m.Address.Equals(localIp)).Distinct(new IPEndPointCompare()).OrderBy(m => Guid.NewGuid()).ToList();
 
-            //测试，调试
-            var data = new List<IPEndPoint> {
-                new IPEndPoint(IPAddress.Parse("192.168.1.102"), 29512),
-                //new IPEndPoint(IPAddress.Parse("192.168.1.102"), 18123)
-            };
+            Track = trackerResponse.IPEndPoint;
+
+            var data = trackerResponse.Peers.Where(m => !m.Address.Equals(localIp)).Distinct(new IPEndPointCompare()).OrderBy(m => Guid.NewGuid()).ToList();
+
+            ////测试，调试
+            //var data = new List<IPEndPoint> {
+            //    new IPEndPoint(IPAddress.Parse("192.168.1.102"), 29512),
+            //    //new IPEndPoint(IPAddress.Parse("192.168.1.102"), 18123)
+            //};
 
             if (data.Count == 0)
             {
-                Console.WriteLine("没有满足条件的track");
+                _logger.LogInformation("没有满足条件的track");
                 return;
             }
-            int maxRun = Math.Min(10, data.Count);
+            Total = data.Count;
+            int maxRun = Math.Min(10, Total);
             SemaphoreSlim = new SemaphoreSlim(maxRun, maxRun);
 
-            Console.WriteLine("ip总数：" + data.Count);
+            _logger.LogWarnning($"track：{Track}，ip总数：" + data.Count);
             var lockObj = new object();
             torrentModel.AddStart();
             foreach (var item in data)
@@ -48,6 +58,7 @@ namespace Torrent
                 {
                     return;
                 }
+                //_logger.LogInformation($"{item}，占用信号量");
                 SemaphoreSlim.Wait();
                 var peer = new Peer(lockObj, this);
                 peer.Process(item, torrentModel.Info, torrentModel);
@@ -64,7 +75,7 @@ namespace Torrent
             }
             torrentModel.AddFinish();
 
-            Console.WriteLine("全部尝试完毕");
+            _logger.LogWarnning($"{Track}：全部尝试完毕");
         }
     }
 
@@ -75,6 +86,7 @@ namespace Torrent
             _lock = lockObj;
             _tcp = tcp;
             _getIndexEnumerator = GetIndex().GetEnumerator();
+            _logger = new Logger(Logger.LogLevel.Warnning);
         }
 
         private static readonly byte[] _reserved = new byte[] { 0, 0, 0, 0, 0, 0, 0, 0 };
@@ -91,13 +103,14 @@ namespace Torrent
         private readonly object _lock;
         private readonly Tcp _tcp;
         private readonly IEnumerator<int> _getIndexEnumerator;
+        private readonly Logger _logger;
         public Dictionary<int, bool> PeerHaveState = new Dictionary<int, bool>();
         private Socket _socket;
         public IPEndPoint ip;
         private Info _info;
         private TorrentModel TorrentModel;
         public bool IsConnect = false;
-
+        private Timer _keepAliveTimer;
 
         public void Process(IPEndPoint pip, Info pinfo, TorrentModel torrentModelIns)
         {
@@ -108,307 +121,370 @@ namespace Torrent
                 _info = pinfo;
                 TorrentModel = torrentModelIns;
                 _socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-                //Console.WriteLine(ip + "， 开始连接");
+                _logger.LogInformation(ip + "， 开始连接");
                 _socket.BeginConnect(ip, ConnectCallBack, null);
-                //Console.WriteLine(ip + "， 等待连接回调");
-
-                void ConnectCallBack(IAsyncResult ar)
-                {
-                    try
-                    {
-                        _socket.EndConnect(ar);
-                        Console.WriteLine(ip + "， 连接成功");
-                        IsConnect = true;
-                        //handshake:<pstrlen><pstr><reserved><info_hash><peer_id>
-                        //"BitTorrent protocol"
-                        byte[] handshakeByte = null;
-                        using (var ms = new MemoryStream())
-                        using (var bw = new BinaryWriter(ms))
-                        {
-                            bw.Write((byte)_pstr.Length);
-                            bw.Write(_pstr);
-                            bw.Write(_reserved);
-                            bw.Write(_info.Sha1Hash);
-                            bw.Write(Http.PeerIdBytes);
-                            handshakeByte = ms.ToArray();
-                        }
-
-                        _socket.SendEnsure(handshakeByte, handshakeByte.Length, SocketFlags.None, $"{ip}, sendHandShake ");
-                        Console.WriteLine(ip + ",发送handshake成功");
-
-                        //发送Bitfield
-                        SendBitfield();
-                        //发送unchok
-                        SendUnChoke();
-
-                        Task.Factory.StartNew(obj =>
-                        {
-                            try
-                            {
-                                var soc = obj as Socket;
-                                int messageLen = 0;
-
-                                //handshake:<pstrlen><pstr><reserved><info_hash><peer_id>
-                                //接收handshake消息
-                                ReceiveHandshake();
-
-                                SendInterested();
-
-                                while (true)
-                                {
-                                    var bufBegin = new byte[4];
-                                    soc.ReceiveEnsure(bufBegin, 4, SocketFlags.None, $"{ip}, 获取消息的长度 ");
-                                    messageLen = BitConverter.ToInt32(bufBegin, 0);
-                                    messageLen = IPAddress.NetworkToHostOrder(messageLen);
-                                    if (messageLen == 0)
-                                    {
-                                        KeepAlive();
-                                    }
-                                    else
-                                    {
-                                        var bufType = new byte[1];
-                                        soc.ReceiveEnsure(bufType, 1, SocketFlags.None, $"{ip}, 获取消息类型 ");
-                                        var id = bufType[0];
-                                        switch (id)
-                                        {
-                                            case 0:
-                                                Choke();
-                                                break;
-                                            case 1:
-                                                UnChoke();
-                                                break;
-                                            case 2:
-                                                Interested();
-                                                break;
-                                            case 3:
-                                                NotInterested();
-                                                break;
-                                            case 4:
-                                                Have();
-                                                break;
-                                            case 5:
-                                                Bitfield();
-                                                break;
-                                            case 6:
-                                                Request();
-                                                break;
-                                            case 7:
-                                                Piece();
-                                                break;
-                                            case 8:
-                                                Cancel();
-                                                break;
-                                            case 9:
-                                                Port();
-                                                break;
-                                            default:
-                                                HandleOtherType();
-                                                break;
-                                        }
-
-                                        void HandleOtherType()
-                                        {
-                                            var extLen = messageLen - 1;
-                                            var ignoreBuf = new byte[extLen];
-                                            soc.ReceiveEnsure(ignoreBuf, extLen, SocketFlags.None, $"{ip} , 接收未知的扩展message");
-                                            Console.WriteLine("处理未知的message类型，长度：" + extLen);
-                                        }
-
-                                        void Port()
-                                        {
-                                            var buf = new byte[2];
-                                            soc.ReceiveEnsure(buf, 2, SocketFlags.None, $"{ip}, Port ");
-                                            Console.WriteLine(ip + ",处理：port");
-                                        }
-
-                                        void Cancel()
-                                        {
-                                            var buf = new byte[4];
-                                            soc.ReceiveEnsure(buf, 4, SocketFlags.None, $"{ip}, Cancel ");
-                                            var index = IPAddress.NetworkToHostOrder(BitConverter.ToInt32(buf, 0));
-                                            soc.ReceiveEnsure(buf, 4, SocketFlags.None, $"{ip}, Cancel ");
-                                            var begin = IPAddress.NetworkToHostOrder(BitConverter.ToInt32(buf, 0));
-                                            soc.ReceiveEnsure(buf, 4, SocketFlags.None, $"{ip}, Cancel ");
-                                            var length = IPAddress.NetworkToHostOrder(BitConverter.ToInt32(buf, 0));
-                                            Console.WriteLine(ip + ",处理：Cancel");
-                                        }
-
-                                        void Piece()
-                                        {
-                                            //piece: <len=0009+X><id=7><index><begin><block>
-                                            var buf = new byte[4];
-                                            soc.ReceiveEnsure(buf, 4, SocketFlags.None, $"{ip}, Piece ");
-                                            var index = IPAddress.NetworkToHostOrder(BitConverter.ToInt32(buf, 0));
-                                            soc.ReceiveEnsure(buf, 4, SocketFlags.None, $"{ip}, Piece ");
-                                            var begin = IPAddress.NetworkToHostOrder(BitConverter.ToInt32(buf, 0));
-
-                                            Console.WriteLine(ip + ",处理：Piece-" + index + " 接收到的数据长度-" + (messageLen - 9));
-                                            buf = new byte[messageLen - 9];
-                                            if (buf.Length == 0)
-                                            {
-                                                return;
-                                            }
-                                            soc.ReceiveEnsure(buf, buf.Length, SocketFlags.None, $"{ip}, Piece ");
-
-                                            TorrentModel.AddWriteToFile(buf, index, begin, this);
-                                            //请求下一段
-                                            SendRequest(index, begin + buf.Length);
-                                        }
-
-                                        void Request()
-                                        {
-                                            Console.WriteLine(ip + ",处理：Request");
-                                            var buf = new byte[4];
-                                            soc.ReceiveEnsure(buf, 4, SocketFlags.None, $"{ip}, Request ");
-                                            var index = IPAddress.NetworkToHostOrder(BitConverter.ToInt32(buf, 0));
-                                            soc.ReceiveEnsure(buf, 4, SocketFlags.None, $"{ip}, Request ");
-                                            var begin = IPAddress.NetworkToHostOrder(BitConverter.ToInt32(buf, 0));
-                                            soc.ReceiveEnsure(buf, 4, SocketFlags.None, $"{ip}, Request ");
-                                            var length = IPAddress.NetworkToHostOrder(BitConverter.ToInt32(buf, 0));
-                                        }
-
-                                        void Bitfield()
-                                        {
-                                            //<len=0001+X><id=5><bitfield>
-                                            Console.WriteLine(ip + ",处理：Bitfield");
-                                            var len = messageLen - 1;
-                                            var buf = new byte[len];
-                                            soc.ReceiveEnsure(buf, len, SocketFlags.None, $"{ip}, Bitfield ");
-                                            SetHaveState(buf);
-
-                                            _ = Task.Factory.StartNew(async () =>
-                                            {
-                                                Console.WriteLine(ip + " :开始下载任务");
-
-                                                while (_peer_choking)
-                                                {
-                                                    await Task.Delay(3000);
-                                                }
-
-                                                RequestNextPeice();
-                                            });
-                                        }
-
-                                        void Have()
-                                        {
-                                            var buf = new byte[4];
-                                            soc.ReceiveEnsure(buf, 4, SocketFlags.None, $"{ip}, Have ");
-                                            var haveIndex = IPAddress.NetworkToHostOrder(BitConverter.ToInt32(buf, 0));
-                                            _haveIndexArray.Add(haveIndex);
-                                            Console.WriteLine(ip + ",处理：Have-" + haveIndex);
-                                            //SendRequest(haveIndex);
-                                        }
-
-                                        void NotInterested()
-                                        {
-                                            Console.WriteLine(ip + ",处理：NotInterested");
-                                            _peer_interested = false;
-                                        }
-
-                                        void Interested()
-                                        {
-                                            Console.WriteLine(ip + ",处理：Interested");
-                                            _peer_interested = true;
-                                        }
-
-                                        void UnChoke()
-                                        {
-                                            Console.WriteLine(ip + ",处理：UnChoke");
-                                            _peer_choking = false;
-
-                                        }
-
-                                        void Choke()
-                                        {
-                                            Console.WriteLine(ip + ",处理：Choke");
-                                            _peer_choking = true;
-                                        }
-                                    }
-
-                                    void KeepAlive()
-                                    {
-                                        Console.WriteLine(ip + ",处理：KeepAlive");
-                                    }
-
-                                    void SetHaveState(byte[] buf)
-                                    {
-                                        if (buf.Length != TorrentModel.Bitfield.Length)
-                                        {
-                                            Console.WriteLine($"{ip} Bitfield的长度错误");
-                                            return;
-                                        }
-                                        int sum = 0;
-                                        string str = "";
-                                        for (int i = 0; i < buf.Length; i++)
-                                        {
-                                            var item = buf[i];
-                                            for (int j = 0; j < 8; j++)
-                                            {
-                                                if (sum >= TorrentModel.DownloadState.Count)
-                                                {
-                                                    break;
-                                                }
-                                                PeerHaveState[sum] = (item & (1 << (7 - j))) == 0 ? false : true;
-                                                str += PeerHaveState[sum] ? "1" : "0";
-                                                sum++;
-                                            }
-                                        }
-                                        Console.WriteLine($"{ip} Bitfield的结果 base64:" + Convert.ToBase64String(buf) + " str.length:" + str.Length + " str：" + str + " BitArray:" + new BitArray(buf).Cast<bool>().Select(m => m ? "1" : "0").Aggregate("", (s, item) => s + item));
-                                    }
-                                }
-
-                                void ReceiveHandshake()
-                                {
-                                    Console.WriteLine(ip + "开始接收handshake");
-                                    var buf = new byte[1];
-                                    soc.ReceiveEnsure(buf, 1, SocketFlags.None, $"{ip}, ReceiveHandshake(pstrlen) ");
-                                    buf = new byte[buf[0]];
-                                    soc.ReceiveEnsure(buf, buf.Length, SocketFlags.None, $"{ip}, ReceiveHandshake(pstr) ");
-                                    Console.WriteLine("协议的标识符:" + Encoding.UTF8.GetString(buf));
-                                    buf = new byte[8];
-                                    soc.ReceiveEnsure(buf, 8, SocketFlags.None, $"{ip}, ReceiveHandshake(reserved-保留字节) ");
-                                    Console.WriteLine("reserved-保留字节：" + string.Join("-", buf));
-                                    buf = new byte[20];
-                                    soc.ReceiveEnsure(buf, buf.Length, SocketFlags.None, $"{ip}, ReceiveHandshake(info_hash) ");
-                                    var isequal = _info.Sha1Hash.SequenceEqual(buf);
-                                    Console.WriteLine($"{ip}, Handshake接收到的info_hash和种子本身的：" + (isequal ? "相同" : "不相同"));
-                                    buf = new byte[20];
-                                    soc.ReceiveEnsure(buf, buf.Length, SocketFlags.None, $"{ip}, ReceiveHandshake(peer_id) ");
-                                    isequal = Http.PeerIdBytes.SequenceEqual(buf);
-                                    Console.WriteLine($"{ip}, Handshake接收到的peer_id和客户端传送的：" + (isequal ? "相同" : "不相同"));
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                IsConnect = false;
-                                Console.WriteLine(ip + "，结束 " + ex.Message);
-                                TorrentModel.Peers.Remove(this);
-                                TorrentModel.SetPeerNull(this);
-                                _tcp.SemaphoreSlim.Release();
-                            }
-
-                        }, _socket, TaskCreationOptions.LongRunning);
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine(ip + " , " + ex.Message);
-                        IsConnect = false;
-                        TorrentModel.Peers.Remove(this);
-                        _tcp.SemaphoreSlim.Release();
-                        return;
-                    }
-                }
 
             }
             catch (Exception ex)
             {
-                Console.WriteLine(ip + " , " + ex.Message);
+                _tcp.Total--;
+                _logger.LogWarnning(ip + "，释放信号量，\ttrack：" + _tcp.Track + "，\t剩余peer：" + _tcp.Total);
+                _tcp.SemaphoreSlim.Release();
+                //_logger.LogInformation(ip + " , " + ex.Message);
                 IsConnect = false;
                 TorrentModel.Peers.Remove(this);
-                _tcp.SemaphoreSlim.Release();
                 return;
             }
 
+        }
+
+        private void ConnectCallBack(IAsyncResult ar)
+        {
+            try
+            {
+                _socket.EndConnect(ar);
+                _logger.LogInformation(ip + "， 连接成功");
+                IsConnect = true;
+                //handshake:<pstrlen><pstr><reserved><info_hash><peer_id>
+                //"BitTorrent protocol"
+                byte[] handshakeByte = null;
+                using (var ms = new MemoryStream())
+                using (var bw = new BinaryWriter(ms))
+                {
+                    bw.Write((byte)_pstr.Length);
+                    bw.Write(_pstr);
+                    bw.Write(_reserved);
+                    bw.Write(_info.Sha1Hash);
+                    bw.Write(Http.PeerIdBytes);
+                    handshakeByte = ms.ToArray();
+                }
+
+                _socket.SendEnsure(handshakeByte, handshakeByte.Length, SocketFlags.None, $"{ip}, sendHandShake ");
+                _logger.LogInformation(ip + ",发送handshake成功");
+
+                //发送Bitfield
+                SendBitfield();
+                //发送unchok
+                SendUnChoke();
+
+                Task.Factory.StartNew(obj =>
+                {
+                    try
+                    {
+                        var soc = obj as Socket;
+                        int messageLen = 0;
+
+                        //handshake:<pstrlen><pstr><reserved><info_hash><peer_id>
+                        //接收handshake消息
+                        ReceiveHandshake(soc);
+
+                        SendInterested();
+
+                        //_keepAliveTimer = new Timer(KeepAliveCallBack, null, TimeSpan.FromSeconds(10), TimeSpan.FromMinutes(2));
+
+                        while (true)
+                        {
+                            var bufBegin = new byte[4];
+                            soc.ReceiveEnsure(bufBegin, 4, SocketFlags.None, $"{ip}, 获取消息的长度 ");
+                            messageLen = BitConverter.ToInt32(bufBegin, 0);
+                            messageLen = IPAddress.NetworkToHostOrder(messageLen);
+                            if (messageLen == 0)
+                            {
+                                KeepAlive();
+                            }
+                            else
+                            {
+                                var bufType = new byte[1];
+                                soc.ReceiveEnsure(bufType, 1, SocketFlags.None, $"{ip}, 获取消息类型 ");
+                                var id = bufType[0];
+                                switch (id)
+                                {
+                                    case 0:
+                                        Choke();
+                                        break;
+                                    case 1:
+                                        UnChoke();
+                                        break;
+                                    case 2:
+                                        Interested();
+                                        break;
+                                    case 3:
+                                        NotInterested();
+                                        break;
+                                    case 4:
+                                        Have(soc);
+                                        break;
+                                    case 5:
+                                        Bitfield(soc, messageLen);
+                                        break;
+                                    case 6:
+                                        Request(soc);
+                                        break;
+                                    case 7:
+                                        Piece(soc, messageLen);
+                                        break;
+                                    case 8:
+                                        Cancel(soc);
+                                        break;
+                                    case 9:
+                                        Port(soc);
+                                        break;
+                                    default:
+                                        HandleOtherType(soc, messageLen);
+                                        break;
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _tcp.Total--;
+                        _logger.LogWarnning(ip + "，释放信号量，\ttrack：" + _tcp.Track + "，\t剩余peer：" + _tcp.Total);
+                        _tcp.SemaphoreSlim.Release();
+                        IsConnect = false;
+                        //_logger.LogWarnning(ip + "，结束 " + ex.Message);
+                        TorrentModel.Peers.Remove(this);
+                        TorrentModel.SetPeerNull(this);
+                    }
+
+                }, _socket, TaskCreationOptions.LongRunning);
+            }
+            catch (Exception ex)
+            {
+                _tcp.Total--;
+                _logger.LogWarnning(ip + "，释放信号量，\ttrack：" + _tcp.Track + "，\t剩余peer：" + _tcp.Total);
+                _tcp.SemaphoreSlim.Release();
+                //_logger.LogWarnning(ip + " , " + ex.Message);
+                IsConnect = false;
+                TorrentModel.Peers.Remove(this);
+                return;
+            }
+        }
+
+        private void KeepAlive()
+        {
+            _logger.LogInformation(ip + ",处理：KeepAlive");
+            SendKeepAlive();
+        }
+
+        private void ReceiveHandshake(Socket soc)
+        {
+            _logger.LogWarnning(ip + "开始接收handshake");
+            var buf = new byte[1];
+            soc.ReceiveEnsure(buf, 1, SocketFlags.None, $"{ip}, ReceiveHandshake(pstrlen) ");
+            buf = new byte[buf[0]];
+            soc.ReceiveEnsure(buf, buf.Length, SocketFlags.None, $"{ip}, ReceiveHandshake(pstr) ");
+            _logger.LogInformation("协议的标识符:" + Encoding.UTF8.GetString(buf));
+            buf = new byte[8];
+            soc.ReceiveEnsure(buf, 8, SocketFlags.None, $"{ip}, ReceiveHandshake(reserved-保留字节) ");
+            _logger.LogWarnning("reserved-保留字节：" + string.Join("-", buf));
+            buf = new byte[20];
+            soc.ReceiveEnsure(buf, buf.Length, SocketFlags.None, $"{ip}, ReceiveHandshake(info_hash) ");
+            var isequal = _info.Sha1Hash.SequenceEqual(buf);
+            _logger.LogInformation($"{ip}, Handshake接收到的info_hash和种子本身的：" + (isequal ? "相同" : "不相同"));
+            buf = new byte[20];
+            soc.ReceiveEnsure(buf, buf.Length, SocketFlags.None, $"{ip}, ReceiveHandshake(peer_id) ");
+            isequal = Http.PeerIdBytes.SequenceEqual(buf);
+            _logger.LogInformation($"{ip}, Handshake接收到的peer_id和客户端传送的：" + (isequal ? "相同" : "不相同"));
+        }
+
+        private void SetHaveState(byte[] buf)
+        {
+            if (buf.Length != TorrentModel.Bitfield.Length)
+            {
+                _logger.LogInformation($"{ip} Bitfield的长度错误");
+                return;
+            }
+            int sum = 0;
+            string str = "";
+            for (int i = 0; i < buf.Length; i++)
+            {
+                var item = buf[i];
+                for (int j = 0; j < 8; j++)
+                {
+                    if (sum >= TorrentModel.DownloadState.Count)
+                    {
+                        break;
+                    }
+                    PeerHaveState[sum] = (item & (1 << (7 - j))) == 0 ? false : true;
+                    str += PeerHaveState[sum] ? "1" : "0";
+                    sum++;
+                }
+            }
+            _logger.LogWarnning($"{ip} Bitfield的结果 str.length:" + str.Length + " str：" + str);
+        }
+
+        private void Choke()
+        {
+            _logger.LogWarnning(ip + ",处理：Choke");
+            _peer_choking = true;
+        }
+
+        private void UnChoke()
+        {
+            _logger.LogWarnning(ip + ",处理：UnChoke");
+            _peer_choking = false;
+            RequestNextPeice();
+        }
+
+        private void Interested()
+        {
+            _logger.LogWarnning(ip + ",处理：Interested");
+            _peer_interested = true;
+        }
+
+        private void NotInterested()
+        {
+            _logger.LogInformation(ip + ",处理：NotInterested");
+            _peer_interested = false;
+        }
+
+        private void Have(Socket soc)
+        {
+            var buf = new byte[4];
+            soc.ReceiveEnsure(buf, 4, SocketFlags.None, $"{ip}, Have ");
+            var haveIndex = IPAddress.NetworkToHostOrder(BitConverter.ToInt32(buf, 0));
+            _haveIndexArray.Add(haveIndex);
+            _logger.LogWarnning(ip + ",处理：Have-" + haveIndex);
+            if (!TorrentModel.DownloadState[haveIndex].IsDownloded)
+            {
+                SendRequest(haveIndex, 0);
+            }
+        }
+
+        private void Bitfield(Socket soc, int messageLen)
+        {
+            //<len=0001+X><id=5><bitfield>
+            _logger.LogWarnning(ip + ",处理：Bitfield");
+            var len = messageLen - 1;
+            var buf = new byte[len];
+            soc.ReceiveEnsure(buf, len, SocketFlags.None, $"{ip}, Bitfield ");
+            SetHaveState(buf);
+
+            _ = Task.Factory.StartNew(async () =>
+            {
+                _logger.LogInformation(ip + " :开始下载任务");
+
+                while (_peer_choking)
+                {
+                    await Task.Delay(3000);
+                }
+
+                RequestNextPeice();
+
+                //Console.WriteLine(ip + " :开始下载任务");
+
+                //while (_peer_choking)
+                //{
+                //    await Task.Delay(3000);
+                //}
+
+                //foreach (var i in GetIndex())
+                //{
+                //    if (TorrentModel.IsFinish)
+                //    {
+                //        return;
+                //    }
+                //    if (!IsConnect)
+                //    {
+                //        break;
+                //    }
+                //    await Task.Delay(1000);
+                //    Console.WriteLine(ip + " :===========判断序号是否存在：" + i);
+                //    var item = TorrentModel.DownloadState[i];
+                //    Console.WriteLine(ip + " :===========当前peer存在序号：" + i);
+                //    if (!item.IsDownloded)
+                //    {
+                //        if (IsConnect && PeerHaveState.ContainsKey(i) && _am_interested)
+                //        {
+                //            var p = this;
+                //            Console.WriteLine(ip + " :======" + p.ip + "======请求" + i + "开始");
+                //            //torrentModel.DownloadSemaphore.Wait();
+                //            p.SendRequest(i);
+                //            item.Peer = this;
+                //            Console.WriteLine(ip + " :======" + p.ip + "======请求" + i + "完毕");
+                //        }
+                //    }
+                //}
+            });
+        }
+
+        private void Request(Socket soc)
+        {
+            _logger.LogWarnning(ip + ",处理：Request");
+            var buf = new byte[4];
+            soc.ReceiveEnsure(buf, 4, SocketFlags.None, $"{ip}, Request ");
+            var index = IPAddress.NetworkToHostOrder(BitConverter.ToInt32(buf, 0));
+            soc.ReceiveEnsure(buf, 4, SocketFlags.None, $"{ip}, Request ");
+            var begin = IPAddress.NetworkToHostOrder(BitConverter.ToInt32(buf, 0));
+            soc.ReceiveEnsure(buf, 4, SocketFlags.None, $"{ip}, Request ");
+            var length = IPAddress.NetworkToHostOrder(BitConverter.ToInt32(buf, 0));
+        }
+
+        private void Piece(Socket soc, int messageLen)
+        {
+            //piece: <len=0009+X><id=7><index><begin><block>
+            var buf = new byte[4];
+            soc.ReceiveEnsure(buf, 4, SocketFlags.None, $"{ip}, Piece ");
+            var index = IPAddress.NetworkToHostOrder(BitConverter.ToInt32(buf, 0));
+            soc.ReceiveEnsure(buf, 4, SocketFlags.None, $"{ip}, Piece ");
+            var begin = IPAddress.NetworkToHostOrder(BitConverter.ToInt32(buf, 0));
+            buf = new byte[messageLen - 9];
+            if (buf.Length == 0)
+            {
+                return;
+            }
+            soc.ReceiveEnsure(buf, buf.Length, SocketFlags.None, $"{ip}, Piece ");
+
+            _logger.LogWarnning(ip + ",处理：Piece-" + index + " 接收到的数据长度-" + (messageLen - 9) + "================================");
+
+            TorrentModel.AddWriteToFile(buf, index, begin, this);
+            //请求下一段
+            SendRequest(index, begin + buf.Length);
+        }
+
+        private void Cancel(Socket soc)
+        {
+            var buf = new byte[4];
+            soc.ReceiveEnsure(buf, 4, SocketFlags.None, $"{ip}, Cancel ");
+            var index = IPAddress.NetworkToHostOrder(BitConverter.ToInt32(buf, 0));
+            soc.ReceiveEnsure(buf, 4, SocketFlags.None, $"{ip}, Cancel ");
+            var begin = IPAddress.NetworkToHostOrder(BitConverter.ToInt32(buf, 0));
+            soc.ReceiveEnsure(buf, 4, SocketFlags.None, $"{ip}, Cancel ");
+            var length = IPAddress.NetworkToHostOrder(BitConverter.ToInt32(buf, 0));
+            _logger.LogInformation(ip + ",处理：Cancel");
+        }
+
+        private void Port(Socket soc)
+        {
+            var buf = new byte[2];
+            soc.ReceiveEnsure(buf, 2, SocketFlags.None, $"{ip}, Port ");
+            _logger.LogInformation(ip + ",处理：port");
+        }
+
+        private void HandleOtherType(Socket soc, int messageLen)
+        {
+            var extLen = messageLen - 1;
+            var ignoreBuf = new byte[extLen];
+            soc.ReceiveEnsure(ignoreBuf, extLen, SocketFlags.None, $"{ip} , 接收未知的扩展message");
+            _logger.LogWarnning("处理未知的message类型，长度：" + extLen);
+        }
+
+        private void KeepAliveCallBack(object state)
+        {
+            SendKeepAlive();
+        }
+
+        private void SendKeepAlive()
+        {
+            lock (_lock)
+            {
+                //<len=0000>
+                var type = IPAddress.HostToNetworkOrder(0);
+                var data = BitConverter.GetBytes(type).ToList();
+                _socket.SendEnsure(data.ToArray(), data.Count, SocketFlags.None, $"{ip}, SendUnChoke ");
+                _logger.LogWarnning($"{ip}, SendKeepAlive 成功");
+            }
         }
 
         private void RequestNextPeice()
@@ -426,19 +502,23 @@ namespace Torrent
             {
                 return;
             }
-            Console.WriteLine(ip + " :===========判断序号是否存在：" + i);
+
             var item = TorrentModel.DownloadState[i];
-            Console.WriteLine(ip + " :===========当前peer存在序号：" + i);
+
             if (!item.IsDownloded)
             {
                 if (IsConnect && PeerHaveState.ContainsKey(i) && _am_interested)
                 {
                     var p = this;
-                    Console.WriteLine(ip + " :======" + p.ip + "======请求" + i + "开始");
+                    _logger.LogInformation(ip + " :======" + p.ip + "======请求" + i + "开始");
                     p.SendRequest(i, 0);
                     item.Peer = this;
-                    Console.WriteLine(ip + " :======" + p.ip + "======请求" + i + "完毕");
+                    _logger.LogWarnning(ip + " :======" + p.ip + "======请求" + i + "完毕");
                 }
+            }
+            else if (TorrentModel.DownloadState.Any(m => m.Value.IsDownloded == false))
+            {
+                RequestNextPeice();
             }
         }
 
@@ -451,6 +531,14 @@ namespace Torrent
                 var ls = _haveIndexArray.OrderBy(m => r.Next()).Union(h).ToList();
                 foreach (var item in ls)
                 {
+                    if (TorrentModel.IsFinish)
+                    {
+                        throw new Exception("下载完毕");
+                    }
+                    if (TorrentModel.DownloadState[item].IsDownloded)
+                    {
+                        continue;
+                    }
                     yield return item;
                 }
             }
@@ -474,7 +562,7 @@ namespace Torrent
                 _socket.SendEnsure(new byte[] { 5 }, 1, SocketFlags.None, $"{ip} 发送Bitfield");
                 _socket.SendEnsure(buf, buf.Length, SocketFlags.None, $"{ip} 发送Bitfield");
 
-                Console.WriteLine($"{ip} 发送Bitfield成功");
+                _logger.LogInformation($"{ip} 发送Bitfield成功");
             }
         }
 
@@ -489,7 +577,7 @@ namespace Torrent
                 data.Add(id);
                 _socket.SendEnsure(data.ToArray(), data.Count, SocketFlags.None, $"{ip}, SendUnChoke ");
                 _am_choking = false;
-                Console.WriteLine($"{ip}, SendUnChoke 成功");
+                _logger.LogInformation($"{ip}, SendUnChoke 成功");
             }
         }
 
@@ -504,7 +592,7 @@ namespace Torrent
                 data.Add(id);
                 _socket.SendEnsure(data.ToArray(), data.Count, SocketFlags.None, $"{ip}, SendInterested ");
                 _am_interested = true;
-                Console.WriteLine($"{ip}, SendInterested 成功");
+                _logger.LogInformation($"{ip}, SendInterested 成功");
             }
         }
 
@@ -520,7 +608,7 @@ namespace Torrent
                 data.AddRange(BitConverter.GetBytes(IPAddress.HostToNetworkOrder(index)));
                 _socket.SendEnsure(data.ToArray(), data.Count, SocketFlags.None, $"{ip}, SendHave ");
                 _am_choking = false;
-                Console.WriteLine($"{ip}, SendHave 成功");
+                _logger.LogWarnning($"{ip}, SendHave 成功");
 
             }
         }
@@ -529,7 +617,7 @@ namespace Torrent
         {
             lock (_lock)
             {
-                Console.WriteLine(ip + ",发送：Request 请求序号：" + requestIndex);
+                _logger.LogInformation(ip + ",发送：Request 请求序号：" + requestIndex);
                 //request: < len = 0013 >< id = 6 >< index >< begin >< length > 
                 //request报文长度固定，用于请求一个块(block)。payload包含如下信息： 
                 //index: 整数，指定从零开始的piece索引。 
@@ -565,10 +653,10 @@ namespace Torrent
                     buf.AddRange(BitConverter.GetBytes(IPAddress.NetworkToHostOrder(begin)));
                     buf.AddRange(BitConverter.GetBytes(IPAddress.NetworkToHostOrder(length)));
 
-                    Console.WriteLine($"{ip}, 发送request, 序号：" + requestIndex + " begin:" + begin + " length:" + length);
+                    _logger.LogWarnning($"{ip}, 发送request, 序号：" + requestIndex + " begin:" + begin + " length:" + length);
 
                     _socket.SendEnsure(buf.ToArray(), buf.Count, SocketFlags.None, $"{ip}, 发送request, 序号：" + requestIndex);
-                    Thread.Sleep(200);
+                    Thread.Sleep(1000);
                 }
             }
         }
@@ -609,7 +697,7 @@ namespace Torrent
                     return;
                 }
 
-                Console.WriteLine(ip + ",发送：Request 请求序号：" + requestIndex);
+                _logger.LogInformation(ip + ",发送：Request 请求序号：" + requestIndex);
 
                 var time = (int)Math.Ceiling(total * 1.0 / oneceLen);
                 //int begin = 0;
@@ -626,13 +714,12 @@ namespace Torrent
                 buf.AddRange(BitConverter.GetBytes(IPAddress.NetworkToHostOrder(begin)));
                 buf.AddRange(BitConverter.GetBytes(IPAddress.NetworkToHostOrder(length)));
 
-                Console.WriteLine($"{ip}, 发送request, 序号：" + requestIndex + " begin:" + begin + " length:" + length);
+                _logger.LogWarnning($"{ip}, 发送request, 序号：" + requestIndex + " begin:" + begin + " length:" + length);
 
                 _socket.SendEnsure(buf.ToArray(), buf.Count, SocketFlags.None, $"{ip}, 发送request, 序号：" + requestIndex);
-
+                //Thread.Sleep(200);
                 //}
             }
         }
-
     }
 }

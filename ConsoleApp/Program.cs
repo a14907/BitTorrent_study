@@ -14,13 +14,14 @@ namespace ConsoleApp
 {
     class Program
     {
+        static Logger _logger = new Logger(Logger.LogLevel.Warnning);
         static async Task Main(string[] args)
         {
-            using (var fs = new FileStream("a.torrent", FileMode.Open))
+            using (var fs = new FileStream("b.torrent", FileMode.Open))
             {
                 var data = Parser.Decode(fs);
                 TorrentModel torrentModel = new TorrentModel(data as DictionaryField);
-                Console.WriteLine("下载：" + torrentModel.Info.Name);
+                _logger.LogWarnning("下载：" + torrentModel.Info.Name);
 
                 _ = torrentModel.TrackAsync();
 
@@ -28,11 +29,15 @@ namespace ConsoleApp
 
                 torrentModel.Connecting();
 
-                torrentModel.Download(new Tracker.Models.TrackerResponse(IPEndPoint.Parse("192.168.1.102:29512")));
+                ////调试
+                //torrentModel.Download(new Tracker.Models.TrackerResponse(IPEndPoint.Parse("192.168.1.102:29512"))
+                //{
+                //    Peers = new IPEndPoint[] { IPEndPoint.Parse("192.168.1.102:29512") }
+                //});
 
                 torrentModel.WaitFinish();
             }
-            Console.WriteLine("OK");
+            _logger.LogWarnning("OK");
         }
     }
 }
