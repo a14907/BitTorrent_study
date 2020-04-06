@@ -331,6 +331,8 @@ namespace Torrent
         {
             _logger.LogWarnning(ip + ",处理：Interested");
             _peer_interested = true;
+
+            SendUnChoke();
         }
 
         private void NotInterested()
@@ -369,8 +371,10 @@ namespace Torrent
                 {
                     await Task.Delay(3000);
                 }
-
-                RequestNextPeice();
+                for (int i = 0; i < 10; i++)
+                {
+                    RequestNextPeice();
+                }
 
                 //Console.WriteLine(ip + " :开始下载任务");
 
@@ -419,6 +423,30 @@ namespace Torrent
             var begin = IPAddress.NetworkToHostOrder(BitConverter.ToInt32(buf, 0));
             soc.ReceiveEnsure(buf, 4, SocketFlags.None, $"{ip}, Request ");
             var length = IPAddress.NetworkToHostOrder(BitConverter.ToInt32(buf, 0));
+
+            //判断是否有
+            if (TorrentModel.DownloadState[index].IsDownloded)
+            {
+                buf = TorrentModel.GetPeicePart(index, begin, length);
+
+                SendPeice(index, begin, buf);
+            }
+        }
+
+        private void SendPeice(int index, int begin, byte[] block)
+        {
+            lock (_lock)
+            {
+                //piece: <len=0009+X><id=7><index><begin><block>
+                var buf = new List<byte>(9 + block.Length);
+                buf.AddRange(BitConverter.GetBytes(IPAddress.HostToNetworkOrder(9 + block.Length)));
+                buf.Add(7);
+                buf.AddRange(BitConverter.GetBytes(IPAddress.HostToNetworkOrder(index)));
+                buf.AddRange(BitConverter.GetBytes(IPAddress.HostToNetworkOrder(begin)));
+                buf.AddRange(block);
+
+                _socket.SendEnsure(buf.ToArray(), buf.Count, SocketFlags.None, $"{ip}: 响应request");
+            }
         }
 
         private void Piece(Socket soc, int messageLen)
@@ -489,6 +517,10 @@ namespace Torrent
 
         private void RequestNextPeice()
         {
+            if (_peer_choking)
+            {
+                return;
+            }
             if (!_getIndexEnumerator.MoveNext())
             {
                 return;
@@ -663,6 +695,10 @@ namespace Torrent
 
         public void SendRequest(int requestIndex, int begin)
         {
+            if (TorrentModel.DownloadState[requestIndex].IsDownloded)
+            {
+                return;
+            }
             lock (_lock)
             {
                 //request: < len = 0013 >< id = 6 >< index >< begin >< length > 

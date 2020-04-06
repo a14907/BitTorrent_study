@@ -424,5 +424,73 @@ namespace Torrent
         {
             _manualResetEventSlim.Wait();
         }
+
+        public byte[] GetPeicePart(int index, int begin, int length)
+        {
+            if (Info.Files == null)
+            {
+                //单文件
+                var start = Info.Piece_length * index + begin;
+                var len = length;
+                var buf = new byte[len];
+
+                var filename = this.Info.Name;
+                using (var fs = new FileStream($"{_baseDir}/{filename}", FileMode.OpenOrCreate))
+                {
+                    fs.Position = start;
+                    fs.Read(buf, 0, buf.Length);
+                    return buf;
+                }
+            }
+            else
+            {
+                //多文件
+                var start = Info.Piece_length * index + begin;
+                var len = length;
+                var buf = new byte[len];
+
+                var end = start + len;
+                long sum = 0;
+                long writeLen = 0;
+                foreach (var item in Info.Files)
+                {
+                    if (start >= sum && start < (sum + item.Length))
+                    {
+                        if ((item.Length + sum - start) >= buf.Length)
+                        {
+                            //最后一节
+                            long count = end - start;
+                            ReadFile(start - sum, writeLen, count);
+                            writeLen += count;
+                        }
+                        else
+                        {
+                            long count = (item.Length + sum - start);
+
+                            ReadFile(start - sum, writeLen, count);
+
+                            writeLen += count;
+                            start += count;
+                        }
+                        if (writeLen == buf.Length)
+                        {
+                            return buf;
+                        }
+                    }
+                    sum += item.Length;
+
+                    void ReadFile(long fileoffset, long bufoffset, long rlen)
+                    {
+                        var filename = _baseDir + "/" + Info.Name + "/" + item.FileName;
+                        using (var fs = new FileStream($"{filename}", FileMode.OpenOrCreate))
+                        {
+                            fs.Position = fileoffset;
+                            fs.Read(buf, (int)bufoffset, (int)rlen);
+                        }
+                    }
+                }
+            }
+            return null;
+        }
     }
 }
