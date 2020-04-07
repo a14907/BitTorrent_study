@@ -57,7 +57,7 @@ namespace Torrent
 
             _logger.LogInformation("http track数量：" + httpUrls.Count);
             //udp tracker:https://blog.csdn.net/wenxinfly/article/details/1504785
-
+            long maxInterval = 10;
             foreach (var b in httpUrls)
             {
                 try
@@ -78,6 +78,8 @@ namespace Torrent
                     {
                         continue;
                     }
+                    maxInterval = Math.Max(10, m.Interval);
+                    _logger.LogWarnning("============================最大等待时间：" + maxInterval);
                     _logger.LogInformation("请求" + b.Url + "成功：" + m.Peers.Length);
                     model.Download(m);
                 }
@@ -86,6 +88,21 @@ namespace Torrent
                     _logger.LogInformation("请求" + b.Url + "发生错误：" + e.Message);
                 }
             }
+
+            if (model.IsFinish)
+            {
+                return;
+            }
+            else
+            {
+                _ = Task.Delay(TimeSpan.FromSeconds(maxInterval))
+                                .ContinueWith(t =>
+                                {
+                                    _logger.LogWarnning("开始下一轮http track");
+                                    _ = TrackAsync(model);
+                                });
+            }
+
         }
 
         public static async Task<object> ScrapeAsync(this TorrentModel model)

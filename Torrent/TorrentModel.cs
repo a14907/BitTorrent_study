@@ -21,6 +21,7 @@ namespace Torrent
 
         public void Download(TrackerResponse trackerResponse)
         {
+            trackerResponse.Peers = trackerResponse.Peers.Except(Peers.Select(m => m.ip)).ToArray();
             _ = Task.Factory.StartNew(() =>
             {
                 new Tcp().Download(this, trackerResponse);

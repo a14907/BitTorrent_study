@@ -85,7 +85,7 @@ namespace Torrent
         {
             _lock = lockObj;
             _tcp = tcp;
-            _getIndexEnumerator = GetIndex().GetEnumerator();
+            _getNextDownloadPart = GetNextDownloadPart().GetEnumerator();
             _logger = new Logger(Logger.LogLevel.Warnning);
         }
 
@@ -102,7 +102,7 @@ namespace Torrent
         private readonly List<int> _haveIndexArray = new List<int>();
         private readonly object _lock;
         private readonly Tcp _tcp;
-        private readonly IEnumerator<int> _getIndexEnumerator;
+        private IEnumerator<(byte[] buf, int index)> _getNextDownloadPart;
         private readonly Logger _logger;
         public Dictionary<int, bool> PeerHaveState = new Dictionary<int, bool>();
         private Socket _socket;
@@ -348,9 +348,11 @@ namespace Torrent
             var haveIndex = IPAddress.NetworkToHostOrder(BitConverter.ToInt32(buf, 0));
             _haveIndexArray.Add(haveIndex);
             _logger.LogWarnning(ip + ",处理：Have-" + haveIndex);
+            _getNextDownloadPart.Dispose();
+            _getNextDownloadPart = GetNextDownloadPart().GetEnumerator();
             if (!TorrentModel.DownloadState[haveIndex].IsDownloded)
             {
-                SendRequest(haveIndex, 0);
+                RequestNextPeice();
             }
         }
 
@@ -468,7 +470,8 @@ namespace Torrent
 
             TorrentModel.AddWriteToFile(buf, index, begin, this);
             //请求下一段
-            SendRequest(index, begin + buf.Length);
+            //SendRequest(index, begin + buf.Length);
+            RequestNextPeice();
         }
 
         private void Cancel(Socket soc)
@@ -521,11 +524,11 @@ namespace Torrent
             {
                 return;
             }
-            if (!_getIndexEnumerator.MoveNext())
+            if (!_getNextDownloadPart.MoveNext())
             {
                 return;
             }
-            var i = _getIndexEnumerator.Current;
+            (byte[] buf, int i) = _getNextDownloadPart.Current;
             if (TorrentModel.IsFinish)
             {
                 return;
@@ -543,7 +546,7 @@ namespace Torrent
                 {
                     var p = this;
                     _logger.LogInformation(ip + " :======" + p.ip + "======请求" + i + "开始");
-                    p.SendRequest(i, 0);
+                    _socket.SendEnsure(buf, buf.Length, SocketFlags.None, $"{ip} 请求request");
                     item.Peer = this;
                     _logger.LogWarnning(ip + " :======" + p.ip + "======请求" + i + "完毕");
                 }
@@ -551,6 +554,53 @@ namespace Torrent
             else if (TorrentModel.DownloadState.Any(m => m.Value.IsDownloded == false))
             {
                 RequestNextPeice();
+            }
+        }
+
+        private IEnumerable<(byte[] buf, int index)> GetNextDownloadPart()
+        {
+            foreach (var requestIndex in GetIndex())
+            {
+                _logger.LogInformation(ip + ",发送：Request 请求序号：" + requestIndex);
+                //request: < len = 0013 >< id = 6 >< index >< begin >< length > 
+                //request报文长度固定，用于请求一个块(block)。payload包含如下信息： 
+                //index: 整数，指定从零开始的piece索引。 
+                //begin: 整数，指定piece中从零开始的字节偏移。 
+                //length: 整数，指定请求的长度。
+
+                //16kb
+                var oneceLen = 16384;
+                int total = (int)_info.Piece_length;
+                if (requestIndex == TorrentModel.DownloadState.Count - 1)
+                {
+                    if (_info.Files == null)
+                    {
+                        total = (int)(_info.Length - (_info.Piece_length * (TorrentModel.DownloadState.Count - 1)));
+                    }
+                    else
+                    {
+                        total = (int)(_info.Files.Sum(m => m.Length) - (_info.Piece_length * (TorrentModel.DownloadState.Count - 1)));
+                    }
+                }
+                var time = (int)Math.Ceiling(total * 1.0 / oneceLen);
+                int begin = 0;
+                int length = 0;
+                for (int i = 0; i < time; i++)
+                {
+                    begin = oneceLen * i;
+                    length = (int)Math.Min(oneceLen, total - begin);
+
+                    var buf = new List<byte>(17);
+                    buf.AddRange(BitConverter.GetBytes(IPAddress.NetworkToHostOrder(13)));
+                    buf.Add(6);
+                    buf.AddRange(BitConverter.GetBytes(IPAddress.NetworkToHostOrder(requestIndex)));
+                    buf.AddRange(BitConverter.GetBytes(IPAddress.NetworkToHostOrder(begin)));
+                    buf.AddRange(BitConverter.GetBytes(IPAddress.NetworkToHostOrder(length)));
+
+                    _logger.LogWarnning($"{ip}, 发送request, 序号：" + requestIndex + " begin:" + begin + " length:" + length);
+
+                    yield return (buf.ToArray(), requestIndex);
+                }
             }
         }
 
