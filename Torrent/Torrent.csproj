@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Bencoding\Bencoding.csproj" />
+    <ProjectReference Include="..\Extensions\Extensions.csproj" />
     <ProjectReference Include="..\Tracker\Tracker.csproj" />
   </ItemGroup>
 

@@ -24,8 +24,6 @@ namespace Torrent
         public static int Port { get; set; } = 8099;
         public static bool IsOk { get; set; }
 
-        private long _maxInterval = 10;
-
         public UdpServer(int port)
         {
             _logger = new Logger(Logger.LogLevel.Warnning);
@@ -155,16 +153,14 @@ namespace Torrent
                         IsOk = true;
                         _dic.Remove(ids);
 
-                        _maxInterval = Math.Max(_maxInterval, tr.Interval);
-                        _logger.LogWarnning("============================最大等待时间：" + _maxInterval);
-
                         if (!model.IsFinish)
                         {
-                            _ = Task.Delay(TimeSpan.FromSeconds(_maxInterval))
+                            _ = Task.Delay(TimeSpan.FromSeconds(tr.Interval))
                                 .ContinueWith(t =>
                                 {
-                                    _logger.LogWarnning("开始下一轮udp track");
-                                    model.Connecting();
+                                    _socket.SendTo(ids.ToArray(), remoteEP);
+                                    _dic.Add(ids, model);
+                                    _connectingLs.Add(new ReplayItem { Ids = ids, EndPoint = remoteEP }, 0);
                                 });
                         }
                     }

@@ -128,7 +128,7 @@ namespace Torrent
             catch (Exception ex)
             {
                 _tcp.Total--;
-                _logger.LogWarnning(ip + "，释放信号量，\ttrack：" + _tcp.Track + "，\t剩余peer：" + _tcp.Total);
+                _logger.LogInformation(ip + "，释放信号量，\ttrack：" + _tcp.Track + "，\t剩余peer：" + _tcp.Total);
                 _tcp.SemaphoreSlim.Release();
                 //_logger.LogInformation(ip + " , " + ex.Message);
                 IsConnect = false;
@@ -239,7 +239,7 @@ namespace Torrent
                     catch (Exception ex)
                     {
                         _tcp.Total--;
-                        _logger.LogWarnning(ip + "，释放信号量，\ttrack：" + _tcp.Track + "，\t剩余peer：" + _tcp.Total);
+                        _logger.LogInformation(ip + "，释放信号量，\ttrack：" + _tcp.Track + "，\t剩余peer：" + _tcp.Total);
                         _tcp.SemaphoreSlim.Release();
                         IsConnect = false;
                         //_logger.LogWarnning(ip + "，结束 " + ex.Message);
@@ -252,7 +252,7 @@ namespace Torrent
             catch (Exception ex)
             {
                 _tcp.Total--;
-                _logger.LogWarnning(ip + "，释放信号量，\ttrack：" + _tcp.Track + "，\t剩余peer：" + _tcp.Total);
+                _logger.LogInformation(ip + "，释放信号量，\ttrack：" + _tcp.Track + "，\t剩余peer：" + _tcp.Total);
                 _tcp.SemaphoreSlim.Release();
                 //_logger.LogWarnning(ip + " , " + ex.Message);
                 IsConnect = false;

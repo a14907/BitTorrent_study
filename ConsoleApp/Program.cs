@@ -17,6 +17,7 @@ namespace ConsoleApp
         static Logger _logger = new Logger(Logger.LogLevel.Warnning);
         static async Task Main(string[] args)
         {
+
             using (var fs = new FileStream("b.torrent", FileMode.Open))
             {
                 var data = Parser.Decode(fs);

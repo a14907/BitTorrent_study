@@ -21,7 +21,7 @@ namespace Torrent
 
         public void Download(TrackerResponse trackerResponse)
         {
-            trackerResponse.Peers = trackerResponse.Peers.Except(Peers.Select(m => m.ip)).ToArray();
+            trackerResponse.Peers = trackerResponse.Peers.Except(Peers.ToArray().Where(m => m != null).Select(m => m.ip)).ToArray();
             _ = Task.Factory.StartNew(() =>
             {
                 new Tcp().Download(this, trackerResponse);
@@ -232,10 +232,6 @@ namespace Torrent
         public void AddFinish()
         {
             _semaphoreSlim.Wait();
-            if (_semaphoreSlim.CurrentCount == 0)
-            {
-                _manualResetEventSlim.Set();
-            }
         }
         private void WriteToFile(byte[] buf, int index, int begin, Peer peer)
         {
