@@ -111,6 +111,7 @@ namespace Torrent
         private TorrentModel TorrentModel;
         public bool IsConnect = false;
         private Timer _keepAliveTimer;
+        private byte[] _peer_reserved;
 
         public void Process(IPEndPoint pip, Info pinfo, TorrentModel torrentModelIns)
         {
@@ -274,10 +275,11 @@ namespace Torrent
             soc.ReceiveEnsure(buf, 1, SocketFlags.None, $"{ip}, ReceiveHandshake(pstrlen) ");
             buf = new byte[buf[0]];
             soc.ReceiveEnsure(buf, buf.Length, SocketFlags.None, $"{ip}, ReceiveHandshake(pstr) ");
-            _logger.LogInformation("协议的标识符:" + Encoding.UTF8.GetString(buf));
+            _logger.LogInformation($"{ip}, 协议的标识符:" + Encoding.UTF8.GetString(buf));
             buf = new byte[8];
             soc.ReceiveEnsure(buf, 8, SocketFlags.None, $"{ip}, ReceiveHandshake(reserved-保留字节) ");
-            _logger.LogWarnning("reserved-保留字节：" + string.Join("-", buf));
+            _peer_reserved = buf;
+            _logger.LogWarnning($"{ip}, reserved-保留字节：" + string.Join("-", buf));
             buf = new byte[20];
             soc.ReceiveEnsure(buf, buf.Length, SocketFlags.None, $"{ip}, ReceiveHandshake(info_hash) ");
             var isequal = _info.Sha1Hash.SequenceEqual(buf);
