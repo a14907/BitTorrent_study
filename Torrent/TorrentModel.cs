@@ -69,7 +69,7 @@ namespace Torrent
 
         public TorrentModel(DictionaryField dictionaryField)
         {
-            _logger = new Logger(Logger.LogLevel.Warnning);
+            _logger = new Logger();
             _dictionaryField = dictionaryField;
             Info = new Info(dictionaryField["info"] as DictionaryField);
             _downloadStateFile = _baseDir + "/" + Info.Name + ".downloadState";
@@ -400,8 +400,15 @@ namespace Torrent
                         var filename = _baseDir + "/" + Info.Name + "/" + item.FileName;
                         using (var fs = new FileStream($"{filename}", FileMode.OpenOrCreate))
                         {
-                            fs.Position = fileoffset;
-                            fs.Read(buf, (int)bufoffset, (int)rlen);
+                            try
+                            {
+                                fs.Position = fileoffset;
+                                fs.Read(buf, (int)bufoffset, (int)rlen);
+                            }
+                            catch (Exception ex)
+                            {
+                                throw ex;
+                            }
                         }
                     }
                 }

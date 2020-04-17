@@ -22,7 +22,7 @@ namespace Torrent
 
         static Http()
         {
-            _logger = new Logger(Logger.LogLevel.Warnning);
+            _logger = new Logger();
             var str = "-WQ0001-";
             var data = Encoding.ASCII.GetBytes(str).ToList();
             var r = new Random();

@@ -14,7 +14,7 @@ namespace ConsoleApp
 {
     class Program
     {
-        static Logger _logger = new Logger(Logger.LogLevel.Warnning);
+        static Logger _logger = new Logger();
         static async Task Main(string[] args)
         {
 

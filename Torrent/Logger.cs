@@ -6,7 +6,7 @@ namespace Torrent
     {
         private readonly LogLevel _logLevel;
 
-        public Logger(LogLevel logLevel = LogLevel.Warnning)
+        public Logger(LogLevel logLevel = LogLevel.Information)
         {
             _logLevel = logLevel;
         }

@@ -26,7 +26,7 @@ namespace Torrent
 
         public UdpServer(int port)
         {
-            _logger = new Logger(Logger.LogLevel.Warnning);
+            _logger = new Logger();
             _port = port;
             _socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
             //_timer = new Timer(RepeatConnectingUDP, null, 15000, Timeout.Infinite);

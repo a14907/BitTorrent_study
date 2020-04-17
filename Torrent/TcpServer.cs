@@ -20,7 +20,7 @@ namespace Torrent
         //public static FakeSemaphoreSlim SemaphoreSlim = new FakeSemaphoreSlim(10, 10);
         public Tcp()
         {
-            _logger = new Logger(Logger.LogLevel.Warnning);
+            _logger = new Logger();
         }
 
         public int Total { get; set; }
@@ -86,7 +86,7 @@ namespace Torrent
             _lock = lockObj;
             _tcp = tcp;
             _getNextDownloadPart = GetNextDownloadPart().GetEnumerator();
-            _logger = new Logger(Logger.LogLevel.Warnning);
+            _logger = new Logger();
         }
 
         private static readonly byte[] _reserved = new byte[] { 0, 0, 0, 0, 0, 0, 0, 0 };
@@ -167,6 +167,8 @@ namespace Torrent
                 //发送unchok
                 SendUnChoke();
 
+                SendInterested();
+
                 Task.Factory.StartNew(obj =>
                 {
                     try
@@ -177,8 +179,6 @@ namespace Torrent
                         //handshake:<pstrlen><pstr><reserved><info_hash><peer_id>
                         //接收handshake消息
                         ReceiveHandshake(soc);
-
-                        SendInterested();
 
                         //_keepAliveTimer = new Timer(KeepAliveCallBack, null, TimeSpan.FromSeconds(10), TimeSpan.FromMinutes(2));
 
@@ -373,10 +373,11 @@ namespace Torrent
                 {
                     await Task.Delay(3000);
                 }
-                for (int i = 0; i < 10; i++)
-                {
-                    RequestNextPeice();
-                }
+                //for (int i = 0; i < 10; i++)
+                //{
+                //    RequestNextPeice();
+                //}
+                RequestNextPeice();
 
                 //Console.WriteLine(ip + " :开始下载任务");
 
