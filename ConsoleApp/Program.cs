@@ -30,10 +30,10 @@ namespace ConsoleApp
 
                 torrentModel.Connecting();
 
-                ////调试
+                //调试
                 //torrentModel.Download(new Tracker.Models.TrackerResponse(IPEndPoint.Parse("192.168.1.102:29512"))
                 //{
-                //    Peers = new IPEndPoint[] { IPEndPoint.Parse("192.168.1.102:29512") }
+                //    Peers = new IPEndPoint[] { IPEndPoint.Parse("192.168.1.239:39114") }
                 //});
 
                 torrentModel.WaitFinish();
