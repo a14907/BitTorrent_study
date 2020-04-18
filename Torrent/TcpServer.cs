@@ -523,6 +523,8 @@ namespace Torrent
 
         private void RequestNextPeice()
         {
+            TorrentModel.ConsumerHold.Wait();
+            _logger.LogError("请求下一个数据");
             if (_peer_choking)
             {
                 return;
