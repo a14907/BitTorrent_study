@@ -165,10 +165,12 @@ namespace Torrent
 
                 //发送Bitfield
                 SendBitfield();
+                //接收handshake消息
+                ReceiveHandshake(_socket);
+
+
                 //发送unchok
                 SendUnChoke();
-
-                SendInterested();
 
                 Task.Factory.StartNew(obj =>
                 {
@@ -177,9 +179,6 @@ namespace Torrent
                         var soc = obj as Socket;
                         int messageLen = 0;
 
-                        //handshake:<pstrlen><pstr><reserved><info_hash><peer_id>
-                        //接收handshake消息
-                        ReceiveHandshake(soc);
 
                         //_keepAliveTimer = new Timer(KeepAliveCallBack, null, TimeSpan.FromSeconds(10), TimeSpan.FromMinutes(2));
 
@@ -286,8 +285,89 @@ namespace Torrent
             _logger.LogInformation($"{ip}, Handshake接收到的info_hash和种子本身的：" + (isequal ? "相同" : "不相同"));
             buf = new byte[20];
             soc.ReceiveEnsure(buf, buf.Length, SocketFlags.None, $"{ip}, ReceiveHandshake(peer_id) ");
-            isequal = Http.PeerIdBytes.SequenceEqual(buf);
-            _logger.LogInformation($"{ip}, Handshake接收到的peer_id和客户端传送的：" + (isequal ? "相同" : "不相同"));
+            _logger.LogInformation($"{ip}, Handshake接收到的peer_id：" + GetClientDescription(buf));
+        }
+
+        private static Dictionary<string, string> _peerClientData = new Dictionary<string, string>
+        {
+            ["AG"] = "Ares",
+            ["A~"] = "Ares",
+            ["AR"] = "Arctic",
+            ["AT"] = "Artemis",
+            ["AX"] = "BitPump",
+            ["AZ"] = "Azureus",
+            ["BB"] = "BitBuddy",
+            ["BC"] = "BitComet",
+            ["BF"] = "Bitflu",
+            ["BG"] = "BTG (uses Rasterbar libtorrent)",
+            ["BP"] = "BitTorrent Pro (Azureus + spyware)",
+            ["BR"] = "BitRocket",
+            ["BS"] = "BTSlave",
+            ["BW"] = "BitWombat",
+            ["BX"] = "~Bittorrent X",
+            ["CD"] = "Enhanced CTorrent",
+            ["CT"] = "CTorrent",
+            ["DE"] = "DelugeTorrent",
+            ["DP"] = "Propagate Data Client",
+            ["EB"] = "EBit",
+            ["ES"] = "electric sheep",
+            ["FC"] = "FileCroc",
+            ["FT"] = "FoxTorrent",
+            ["GS"] = "GSTorrent",
+            ["HL"] = "Halite",
+            ["HN"] = "Hydranode",
+            ["KG"] = "KGet",
+            ["KT"] = "KTorrent",
+            ["LC"] = "LeechCraft",
+            ["LH"] = "LH-ABC",
+            ["LP"] = "Lphant",
+            ["LT"] = "libtorrent",
+            ["lt"] = "libTorrent",
+            ["LW"] = "LimeWire",
+            ["MO"] = "MonoTorrent",
+            ["MP"] = "MooPolice",
+            ["MR"] = "Miro",
+            ["MT"] = "MoonlightTorrent",
+            ["NX"] = "Net Transport",
+            ["OT"] = "OmegaTorrent",
+            ["PD"] = "Pando",
+            ["qB"] = "qBittorrent",
+            ["QD"] = "QQDownload",
+            ["QT"] = "Qt 4 Torrent example",
+            ["RT"] = "Retriever",
+            ["RZ"] = "RezTorrent",
+            ["S~"] = "Shareaza alpha/beta",
+            ["SB"] = "~Swiftbit",
+            ["SS"] = "SwarmScope",
+            ["ST"] = "SymTorrent",
+            ["st"] = "sharktorrent",
+            ["SZ"] = "Shareaza",
+            ["TN"] = "TorrentDotNET",
+            ["TR"] = "Transmission",
+            ["TS"] = "Torrentstorm",
+            ["TT"] = "TuoTu",
+            ["UL"] = "uLeecher!",
+            ["UM"] = "µTorrent for Mac",
+            ["UT"] = "µTorrent",
+            ["VG"] = "Vagaa",
+            ["WT"] = "BitLet",
+            ["WY"] = "FireTorrent",
+            ["XL"] = "Xunlei",
+            ["XT"] = "XanTorrent",
+            ["XX"] = "Xtorrent",
+            ["ZT"] = "ZipTorrent",
+        };
+        private string GetClientDescription(byte[] buf)
+        {
+            if (buf[0] == '-')
+            {
+                var ptype = Encoding.ASCII.GetString(buf, 1, 2);
+                if (_peerClientData.ContainsKey(ptype))
+                {
+                    return _peerClientData[ptype];
+                }
+            }
+            return "位置客户端：" + Encoding.ASCII.GetString(buf);
         }
 
         private void SetHaveState(byte[] buf)
@@ -366,6 +446,8 @@ namespace Torrent
             var buf = new byte[len];
             soc.ReceiveEnsure(buf, len, SocketFlags.None, $"{ip}, Bitfield ");
             SetHaveState(buf);
+
+            SendInterested();
 
             _ = Task.Factory.StartNew(async () =>
             {

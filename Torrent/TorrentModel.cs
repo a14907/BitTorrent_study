@@ -31,7 +31,7 @@ namespace Torrent
         private readonly Guid _guid = Guid.NewGuid();
         public Dictionary<int, DownloadState> DownloadState;
         public List<Peer> Peers = new List<Peer>();
-        public SemaphoreSlim ConsumerHold = new SemaphoreSlim(10, 10);
+        public SemaphoreSlim ConsumerHold = new SemaphoreSlim(1024, 1024);
         public bool IsFinish { get; set; }
         private readonly object _lock = new object();
         private readonly BlockingCollection<(byte[] buf, int index, int begin, Peer peer)> _writeToFileDB = new BlockingCollection<(byte[], int, int, Peer)>();
@@ -142,6 +142,7 @@ namespace Torrent
                         catch (Exception ex)
                         {
                             _logger.LogError(ex.Message);
+                            throw ex;
                         }
                         finally
                         {
@@ -264,7 +265,7 @@ namespace Torrent
                 {
                     if (start >= sum && start < (sum + item.Length))
                     {
-                        if ((item.Length + sum - start) >= buf.Length)
+                        if ((item.Length + sum - start) >= buf.Length - writeLen)
                         {
                             //最后一节
                             long count = end - start;
@@ -409,7 +410,7 @@ namespace Torrent
                 {
                     if (start >= sum && start < (sum + item.Length))
                     {
-                        if ((item.Length + sum - start) >= buf.Length)
+                        if ((item.Length + sum - start) >= buf.Length - writeLen)
                         {
                             //最后一节
                             long count = end - start;
@@ -445,6 +446,10 @@ namespace Torrent
                 try
                 {
                     fs.Position = fileoffset;
+                    if (bufoffset + rlen > buf.Length)
+                    {
+                        return;
+                    }
                     fs.Read(buf, (int)bufoffset, (int)rlen);
                 }
                 catch (Exception ex)
