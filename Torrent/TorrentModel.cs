@@ -16,7 +16,7 @@ namespace Torrent
     {
         private readonly Logger _logger;
         private readonly DictionaryField _dictionaryField;
-        private readonly SHA1 _sha1 = SHA1.Create();
+        private readonly FileStreamPool _fileStreamPool;
         private readonly string _baseDir = "Download";
 
         public void Download(TrackerResponse trackerResponse)
@@ -31,6 +31,7 @@ namespace Torrent
         private readonly Guid _guid = Guid.NewGuid();
         public Dictionary<int, DownloadState> DownloadState;
         public List<Peer> Peers = new List<Peer>();
+        public SemaphoreSlim ConsumerHold = new SemaphoreSlim(10, 10);
         public bool IsFinish { get; set; }
         private readonly object _lock = new object();
         private readonly BlockingCollection<(byte[] buf, int index, int begin, Peer peer)> _writeToFileDB = new BlockingCollection<(byte[], int, int, Peer)>();
@@ -69,6 +70,7 @@ namespace Torrent
 
         public TorrentModel(DictionaryField dictionaryField)
         {
+            _fileStreamPool = new FileStreamPool(_lock);
             _logger = new Logger();
             _dictionaryField = dictionaryField;
             Info = new Info(dictionaryField["info"] as DictionaryField);
@@ -117,23 +119,38 @@ namespace Torrent
             }
 
             //配置数据写入进程
-            _ = Task.Factory.StartNew(() =>
-            {
-                foreach (var item in _writeToFileDB.GetConsumingEnumerable())
-                {
-                    try
-                    {
-                        WriteToFile(item.buf, item.index, item.begin, item.peer);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex.Message);
-                    }
-                }
-                _writeToFileDB.Dispose();
-            }, TaskCreationOptions.LongRunning);
+            ConsumeData();
 
             _udpServer.Start();
+        }
+
+        private void ConsumeData()
+        {
+            for (int i = 0; i < 1; i++)
+            {
+                int index = i;
+                _ = Task.Factory.StartNew(() =>
+                {
+                    foreach (var item in _writeToFileDB.GetConsumingEnumerable())
+                    {
+                        int num = index;
+                        _logger.LogError($"index:{index}    total:{_writeToFileDB.Count}");
+                        try
+                        {
+                            WriteToFile(item.buf, item.index, item.begin, item.peer);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex.Message);
+                        }
+                        finally
+                        {
+                            ConsumerHold.Release();
+                        }
+                    }
+                    _writeToFileDB.Dispose();
+                }, TaskCreationOptions.LongRunning);
+            }
         }
 
         public Guid Id { get { return _guid; } }
@@ -251,14 +268,14 @@ namespace Torrent
                         {
                             //最后一节
                             long count = end - start;
-                            WriteFile(start - sum, writeLen, count);
+                            WriteFile(start - sum, writeLen, count, buf, item);
                             writeLen += count;
                         }
                         else
                         {
                             long count = (item.Length + sum - start);
 
-                            WriteFile(start - sum, writeLen, count);
+                            WriteFile(start - sum, writeLen, count, buf, item);
 
                             writeLen += count;
                             start += count;
@@ -269,24 +286,15 @@ namespace Torrent
                         }
                     }
                     sum += item.Length;
-
-                    void WriteFile(long fileoffset, long bufOffset, long len)
-                    {
-                        var filename = _baseDir + "/" + Info.Name + "/" + item.FileName;
-                        using (var fs = new FileStream($"{filename}", FileMode.OpenOrCreate))
-                        {
-                            fs.Position = fileoffset;
-                            fs.Write(buf, (int)bufOffset, (int)len);
-                        }
-                    }
                 }
             }
             else
             {
-                //单文件
-                var filename = this.Info.Name;
-                using (var fs = new FileStream($"{_baseDir}/{filename}", FileMode.OpenOrCreate))
+                lock (_lock)
                 {
+                    //单文件
+                    var filename = this.Info.Name;
+                    var fs = _fileStreamPool.GetStream($"{_baseDir}/{filename}");
                     fs.Position = index * Info.Piece_length + begin;
                     fs.Write(buf, 0, buf.Length);
                 }
@@ -298,33 +306,61 @@ namespace Torrent
             || (Info.Files != null && index == (this.DownloadState.Count - 1) && ditem.DownloadCount >= (Info.Files.Sum(m => m.Length) - Info.Piece_length * (this.DownloadState.Count - 1)))
                 )
             {
-                var shares = _sha1.ComputeHash(GetPeicePart(index));
-                if (Info.PiecesHashArray[index].SequenceEqual(shares))
+                using (SHA1 _sha1 = SHA1.Create())
                 {
-                    ditem.IsDownloded = true;
-                    ditem.Peer = null;
-                    peer.SendHave(index);
-                    //保存下载进度
-                    SaveDownloadProcess();
+                    var shares = _sha1.ComputeHash(GetPeicePart(index));
+                    if (Info.PiecesHashArray[index].SequenceEqual(shares))
+                    {
+                        ditem.IsDownloded = true;
+                        ditem.Peer = null;
+                        peer.SendHave(index);
+                        //保存下载进度
+                        SaveDownloadProcess();
+                    }
                 }
+
             }
             if (!this.DownloadState.Any(m => m.Value.IsDownloded == false))
             {
                 _logger.LogWarnning("下载完毕");
                 IsFinish = true;
                 _writeToFileDB.CompleteAdding();
+                _fileStreamPool.Dispose();
                 DownloadComplete();
                 _manualResetEventSlim.Set();
             }
         }
 
+        private void WriteFile(long fileoffset, long bufOffset, long len, byte[] buf, FileInfo item)
+        {
+            lock (_lock)
+            {
+                var filename = _baseDir + "/" + Info.Name + "/" + item.FileName;
+                var fs = _fileStreamPool.GetStream($"{filename}");
+                try
+                {
+                    fs.Position = fileoffset;
+                    fs.Write(buf, (int)bufOffset, (int)len);
+                }
+                catch (Exception ex)
+                {
+
+                    throw;
+                }
+            }
+
+        }
+
         private void SaveDownloadProcess()
         {
-            using (var fs = new FileStream(_downloadStateFile, FileMode.Create))
+            lock (_lock)
             {
-                var dicdata = DownloadState.ToDictionary(m => m.Key, m => m.Value.IsDownloded);
-                var json = new System.Runtime.Serialization.Json.DataContractJsonSerializer(dicdata.GetType());
-                json.WriteObject(fs, dicdata);
+                using (var fs = new FileStream(_downloadStateFile, FileMode.Create))
+                {
+                    var dicdata = DownloadState.ToDictionary(m => m.Key, m => m.Value.IsDownloded);
+                    var json = new System.Runtime.Serialization.Json.DataContractJsonSerializer(dicdata.GetType());
+                    json.WriteObject(fs, dicdata);
+                }
             }
         }
         private Dictionary<int, bool> LoadDownloadProcess()
@@ -351,8 +387,9 @@ namespace Torrent
                 var buf = new byte[len];
 
                 var filename = this.Info.Name;
-                using (var fs = new FileStream($"{_baseDir}/{filename}", FileMode.OpenOrCreate))
+                lock (_lock)
                 {
+                    var fs = _fileStreamPool.GetStream($"{_baseDir}/{filename}");
                     fs.Position = start;
                     fs.Read(buf, 0, buf.Length);
                     return buf;
@@ -376,14 +413,14 @@ namespace Torrent
                         {
                             //最后一节
                             long count = end - start;
-                            ReadFile(start - sum, writeLen, count);
+                            ReadFile(start - sum, writeLen, count, buf, item);
                             writeLen += count;
                         }
                         else
                         {
                             long count = (item.Length + sum - start);
 
-                            ReadFile(start - sum, writeLen, count);
+                            ReadFile(start - sum, writeLen, count, buf, item);
 
                             writeLen += count;
                             start += count;
@@ -394,26 +431,27 @@ namespace Torrent
                         }
                     }
                     sum += item.Length;
-
-                    void ReadFile(long fileoffset, long bufoffset, long rlen)
-                    {
-                        var filename = _baseDir + "/" + Info.Name + "/" + item.FileName;
-                        using (var fs = new FileStream($"{filename}", FileMode.OpenOrCreate))
-                        {
-                            try
-                            {
-                                fs.Position = fileoffset;
-                                fs.Read(buf, (int)bufoffset, (int)rlen);
-                            }
-                            catch (Exception ex)
-                            {
-                                throw ex;
-                            }
-                        }
-                    }
                 }
             }
             return null;
+        }
+
+        private void ReadFile(long fileoffset, long bufoffset, long rlen, byte[] buf, FileInfo item)
+        {
+            lock (_lock)
+            {
+                var filename = _baseDir + "/" + Info.Name + "/" + item.FileName;
+                var fs = _fileStreamPool.GetStream($"{filename}");
+                try
+                {
+                    fs.Position = fileoffset;
+                    fs.Read(buf, (int)bufoffset, (int)rlen);
+                }
+                catch (Exception ex)
+                {
+                    throw ex;
+                }
+            }
         }
 
         public void Connecting()
@@ -439,8 +477,9 @@ namespace Torrent
                 var buf = new byte[len];
 
                 var filename = this.Info.Name;
-                using (var fs = new FileStream($"{_baseDir}/{filename}", FileMode.OpenOrCreate))
+                lock (_lock)
                 {
+                    var fs = _fileStreamPool.GetStream($"{_baseDir}/{filename}");
                     fs.Position = start;
                     fs.Read(buf, 0, buf.Length);
                     return buf;
@@ -464,14 +503,13 @@ namespace Torrent
                         {
                             //最后一节
                             long count = end - start;
-                            ReadFile(start - sum, writeLen, count);
+                            ReadFile1(start - sum, writeLen, count, buf, item);
                             writeLen += count;
                         }
                         else
                         {
                             long count = (item.Length + sum - start);
-
-                            ReadFile(start - sum, writeLen, count);
+                            ReadFile1(start - sum, writeLen, count, buf, item);
 
                             writeLen += count;
                             start += count;
@@ -482,19 +520,21 @@ namespace Torrent
                         }
                     }
                     sum += item.Length;
-
-                    void ReadFile(long fileoffset, long bufoffset, long rlen)
-                    {
-                        var filename = _baseDir + "/" + Info.Name + "/" + item.FileName;
-                        using (var fs = new FileStream($"{filename}", FileMode.OpenOrCreate))
-                        {
-                            fs.Position = fileoffset;
-                            fs.Read(buf, (int)bufoffset, (int)rlen);
-                        }
-                    }
                 }
             }
             return null;
+
+        }
+
+        private void ReadFile1(long fileoffset, long bufoffset, long rlen, byte[] buf, FileInfo item)
+        {
+            lock (_lock)
+            {
+                var filename = _baseDir + "/" + Info.Name + "/" + item.FileName;
+                var fs = _fileStreamPool.GetStream($"{filename}");
+                fs.Position = fileoffset;
+                fs.Read(buf, (int)bufoffset, (int)rlen);
+            }
         }
     }
 }

@@ -24,17 +24,17 @@ namespace ConsoleApp
                 TorrentModel torrentModel = new TorrentModel(data as DictionaryField);
                 _logger.LogWarnning("下载：" + torrentModel.Info.Name);
 
-                _ = torrentModel.TrackAsync();
+                //_ = torrentModel.TrackAsync();
 
                 //var res2 = await torrentModel.ScrapeAsync();
 
-                torrentModel.Connecting();
+                //torrentModel.Connecting();
 
                 //调试
-                //torrentModel.Download(new Tracker.Models.TrackerResponse(IPEndPoint.Parse("192.168.1.102:29512"))
-                //{
-                //    Peers = new IPEndPoint[] { IPEndPoint.Parse("192.168.1.239:39114") }
-                //});
+                torrentModel.Download(new Tracker.Models.TrackerResponse(IPEndPoint.Parse("192.168.1.102:29512"))
+                {
+                    Peers = new IPEndPoint[] { IPEndPoint.Parse("192.168.1.239:39114") }
+                });
 
                 torrentModel.WaitFinish();
             }

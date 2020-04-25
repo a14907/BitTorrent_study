@@ -6,7 +6,7 @@ namespace Torrent
     {
         private readonly LogLevel _logLevel;
 
-        public Logger(LogLevel logLevel = LogLevel.Information)
+        public Logger(LogLevel logLevel = LogLevel.Error)
         {
             _logLevel = logLevel;
         }
@@ -32,7 +32,7 @@ namespace Torrent
             {
                 return;
             }
-            Console.WriteLine(log);
+            Console.WriteLine(log + "********************************************************************");
         }
 
         public enum LogLevel
