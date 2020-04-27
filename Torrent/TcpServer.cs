@@ -76,6 +76,10 @@ namespace Torrent
             torrentModel.AddFinish();
 
             _logger.LogWarnning($"{Track}：全部尝试完毕");
+
+            _ = torrentModel.TrackAsync();
+
+            torrentModel.Connecting();
         }
     }
 
@@ -163,14 +167,14 @@ namespace Torrent
                 _socket.SendEnsure(handshakeByte, handshakeByte.Length, SocketFlags.None, $"{ip}, sendHandShake ");
                 _logger.LogInformation(ip + ",发送handshake成功");
 
+
                 //发送Bitfield
                 SendBitfield();
                 //接收handshake消息
                 ReceiveHandshake(_socket);
 
 
-                //发送unchok
-                SendUnChoke();
+
 
                 Task.Factory.StartNew(obj =>
                 {
@@ -447,6 +451,8 @@ namespace Torrent
             soc.ReceiveEnsure(buf, len, SocketFlags.None, $"{ip}, Bitfield ");
             SetHaveState(buf);
 
+            //发送unchok
+            SendUnChoke();
             SendInterested();
 
             _ = Task.Factory.StartNew(async () =>
@@ -684,7 +690,7 @@ namespace Torrent
                     buf.AddRange(BitConverter.GetBytes(IPAddress.NetworkToHostOrder(begin)));
                     buf.AddRange(BitConverter.GetBytes(IPAddress.NetworkToHostOrder(length)));
 
-                    _logger.LogWarnning($"{ip}, 发送request, 序号：" + requestIndex + " begin:" + begin + " length:" + length);
+                    _logger.LogInformation($"{ip}, 发送request, 序号：" + requestIndex + " begin:" + begin + " length:" + length);
 
                     yield return (buf.ToArray(), requestIndex);
                 }
@@ -822,7 +828,7 @@ namespace Torrent
                     buf.AddRange(BitConverter.GetBytes(IPAddress.NetworkToHostOrder(begin)));
                     buf.AddRange(BitConverter.GetBytes(IPAddress.NetworkToHostOrder(length)));
 
-                    _logger.LogWarnning($"{ip}, 发送request, 序号：" + requestIndex + " begin:" + begin + " length:" + length);
+                    _logger.LogInformation($"{ip}, 发送request, 序号：" + requestIndex + " begin:" + begin + " length:" + length);
 
                     _socket.SendEnsure(buf.ToArray(), buf.Count, SocketFlags.None, $"{ip}, 发送request, 序号：" + requestIndex);
                     Thread.Sleep(1000);
@@ -887,7 +893,7 @@ namespace Torrent
                 buf.AddRange(BitConverter.GetBytes(IPAddress.NetworkToHostOrder(begin)));
                 buf.AddRange(BitConverter.GetBytes(IPAddress.NetworkToHostOrder(length)));
 
-                _logger.LogWarnning($"{ip}, 发送request, 序号：" + requestIndex + " begin:" + begin + " length:" + length);
+                _logger.LogInformation($"{ip}, 发送request, 序号：" + requestIndex + " begin:" + begin + " length:" + length);
 
                 _socket.SendEnsure(buf.ToArray(), buf.Count, SocketFlags.None, $"{ip}, 发送request, 序号：" + requestIndex);
                 //Thread.Sleep(200);

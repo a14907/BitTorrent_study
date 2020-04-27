@@ -26,15 +26,15 @@ namespace ConsoleApp
 
                 _ = torrentModel.TrackAsync();
 
-                //var res2 = await torrentModel.ScrapeAsync();
-
                 torrentModel.Connecting();
 
+                //var res2 = await torrentModel.ScrapeAsync();
+
                 ////调试
-                //torrentModel.Download(new Tracker.Models.TrackerResponse(IPEndPoint.Parse("192.168.1.102:18123"))
+                //torrentModel.Download(new Tracker.Models.TrackerResponse(IPEndPoint.Parse("192.168.1.102:29512"))
                 //{
                 //    Peers = new IPEndPoint[] {
-                //        IPEndPoint.Parse("192.168.1.102:18123"),
+                //        IPEndPoint.Parse("192.168.1.102:29512"),
                 //    }
                 //});
 

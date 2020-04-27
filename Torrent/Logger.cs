@@ -16,7 +16,7 @@ namespace Torrent
             {
                 return;
             }
-            Console.WriteLine(log);
+            //Console.WriteLine(log);
         }
         public void LogWarnning(string log)
         {
@@ -32,7 +32,7 @@ namespace Torrent
             {
                 return;
             }
-            Console.WriteLine(log);
+            //Console.WriteLine(log);
         }
 
         public enum LogLevel
